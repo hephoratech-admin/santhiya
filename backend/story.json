@@ -1,0 +1,156 @@
+{
+  "name": "Santhiya",
+  "from": "Yours, always",
+  "since": "2023-02-14T00:00:00",
+  "tagline": "Every frame of my life is better with you in it.",
+  "heartsNeeded": 6,
+  "page": {
+    "passcode": "1402",
+    "passHint": "Hint: the day we became us (DDMM) ♥",
+    "opening": ["Hey Santhiya,", "I know this isn't an ordinary gift…", "but I made every little piece of it, just for you."],
+    "quote": ["In your *smile*, I found my *peace*.", "In your *love*, I found my *home*."],
+    "fromMe": "From me to you.",
+    "fromMeSub": "This is how much I love you",
+    "closing": "I will always love you",
+    "signature": "From, your forever"
+  },
+  "partner": {
+    "name": "Your Love",
+    "look": { "skin": "#c68a62", "hairColor": "#1d1218", "hair": "boy", "top": "#d8e6f2", "bottom": "#3a4256", "extra": "beard" }
+  },
+  "gift": {
+    "photo": "/photos/gift.jpeg",
+    "title": "Your gift is on the way ♥",
+    "name": "Rose-gold Nebula watch",
+    "text": "A rose-gold watch with a mother-of-pearl dial, so every second of your day reminds you of me. It's already travelling to you."
+  },
+  "places": [
+    {
+      "id": "home",
+      "name": "Home",
+      "caption": "Where everything feels safe",
+      "text": "Home isn't just a place. It's the smile you carry into every room. Even your shark friend agrees you're the best part of it.",
+      "photos": [
+        { "src": "/photos/photo-08.jpeg", "caption": "Pure joy" },
+        { "src": "/photos/photo-06.jpeg", "caption": "Shark hugs and sunshine" },
+        { "src": "/photos/photo-09.jpeg", "caption": "Can't stop smiling" },
+        { "src": "/photos/photo-10.jpeg", "caption": "My favourite smile" },
+        { "src": "/photos/photo-07.jpeg", "caption": "My cuddle buddy" }
+      ]
+    },
+    {
+      "id": "college",
+      "name": "Sri Ramakrishna College of Arts and Science",
+      "caption": "Where you grew into you",
+      "text": "Lectures, friends, canteen chai and big dreams. Every corridor here has heard you laugh.",
+      "photos": [
+        { "src": "/photos/photo-16.jpeg", "caption": "Grace in green" },
+        { "src": "/photos/photo-04.jpeg", "caption": "That golden glow" },
+        { "src": "/photos/photo-18.jpeg", "caption": "Pink silk, prettiest you" }
+      ]
+    },
+    {
+      "id": "pg",
+      "name": "Bangalore PG",
+      "caption": "A small room in a big city",
+      "text": "Far from home, you turned one small room in Bangalore into a whole world. Late-night talks, selfies, big dreams, all in one little corner of the city.",
+      "photos": [
+        { "src": "/photos/photo-11.jpeg", "caption": "Peace, love and you" },
+        { "src": "/photos/photo-22.jpeg", "caption": "Close enough to whisper" },
+        { "src": "/photos/photo-05.jpeg", "caption": "Quiet moments" }
+      ]
+    },
+    {
+      "id": "cafe",
+      "name": "Our Café",
+      "caption": "Two cups, one table",
+      "text": "Two cups, one table, and hours that felt like minutes. If I could relive a single afternoon, it would start here with you across from me.",
+      "photos": [
+        { "src": "/photos/photo-20.jpeg", "caption": "Side by side" },
+        { "src": "/photos/photo-21.jpeg", "caption": "Matching smiles" }
+      ]
+    },
+    {
+      "id": "museum",
+      "name": "Our Museum",
+      "caption": "A museum built out of your photos",
+      "text": "Walk through every moment I keep close.",
+      "photos": []
+    },
+    {
+      "id": "stage",
+      "name": "The Little Stage",
+      "caption": "Where you first shone",
+      "text": "Long before I knew you, you were already shining. I wish I could have clapped from the front row.",
+      "photos": [
+        { "src": "/photos/photo-17.jpeg", "caption": "Even then, a star" }
+      ]
+    },
+    {
+      "id": "cinema",
+      "name": "Movie Nights",
+      "caption": "Now showing: us",
+      "text": "We've watched so many stories together, but ours is still my favourite one playing.",
+      "photos": [
+        { "src": "/photos/photo-19.jpeg", "caption": "Us, in the sunshine" },
+        { "src": "/photos/photo-01.jpeg", "caption": "Together, always" }
+      ]
+    },
+    {
+      "id": "arcade",
+      "name": "Puzzle House",
+      "caption": "Solve both puzzles for a surprise",
+      "text": "Two little puzzles made of our photos. Finish both and something special is waiting.",
+      "photos": []
+    },
+    {
+      "id": "park",
+      "name": "Sunset Park",
+      "caption": "Golden light, quiet bench",
+      "text": "Golden light, a quiet bench, and you. This is where I'd stop time.",
+      "photos": [
+        { "src": "/photos/photo-02.jpeg", "caption": "Red, roses and you" },
+        { "src": "/photos/photo-13.jpeg", "caption": "Drawn from my heart" }
+      ]
+    },
+    {
+      "id": "post",
+      "name": "Love Letters",
+      "caption": "A letter, just for you",
+      "text": "Every heart you collected is a little piece of how I feel. Here's the letter I wrote you.",
+      "photos": [
+        { "src": "/photos/photo-12.jpeg", "caption": "Sketched with love" },
+        { "src": "/photos/photo-14.jpeg", "caption": "Cute is you" }
+      ]
+    }
+  ],
+  "gallery": [
+    { "src": "/photos/photo-01.jpeg", "caption": "Together, always" },
+    { "src": "/photos/photo-02.jpeg", "caption": "Red, roses and you" },
+    { "src": "/photos/photo-06.jpeg", "caption": "Shark hugs and sunshine" },
+    { "src": "/photos/photo-04.jpeg", "caption": "That golden glow" },
+    { "src": "/photos/photo-16.jpeg", "caption": "Grace in green" },
+    { "src": "/photos/photo-08.jpeg", "caption": "Pure joy" },
+    { "src": "/photos/photo-20.jpeg", "caption": "Side by side" },
+    { "src": "/photos/photo-11.jpeg", "caption": "Peace, love and you" },
+    { "src": "/photos/photo-14.jpeg", "caption": "Cute is you" },
+    { "src": "/photos/photo-18.jpeg", "caption": "Pink silk, prettiest you" },
+    { "src": "/photos/photo-09.jpeg", "caption": "Can't stop smiling" },
+    { "src": "/photos/photo-19.jpeg", "caption": "Us, in the sunshine" },
+    { "src": "/photos/photo-13.jpeg", "caption": "Drawn from my heart" },
+    { "src": "/photos/photo-17.jpeg", "caption": "Even then, a star" },
+    { "src": "/photos/photo-07.jpeg", "caption": "My cuddle buddy" },
+    { "src": "/photos/photo-21.jpeg", "caption": "Matching smiles" },
+    { "src": "/photos/photo-05.jpeg", "caption": "Quiet moments" },
+    { "src": "/photos/photo-12.jpeg", "caption": "Sketched with love" },
+    { "src": "/photos/photo-10.jpeg", "caption": "My favourite smile" },
+    { "src": "/photos/photo-22.jpeg", "caption": "Close enough to whisper" }
+  ],
+  "letter": [
+    "My dearest Santhiya,",
+    "If I could rewind my life like a film and choose the best scene, I wouldn't pick a grand moment. I'd pick any quiet one where you're beside me, laughing at something small.",
+    "You turned ordinary days into my favourite memories. You make me braver, softer, and happier than I knew I could be.",
+    "Thank you for being my home, my calm, and my greatest adventure. I love you more than words, and I'll spend a lifetime showing you.",
+    "Always yours."
+  ]
+}
