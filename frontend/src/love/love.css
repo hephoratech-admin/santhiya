@@ -143,3 +143,11 @@
 @keyframes lp-sheen { 0%, 55% { transform: translateX(-120%); } 100% { transform: translateX(120%); } }
 .lp-card, .lp-paper, .lp-mem, .lp-pol { box-shadow: 0 34px 70px -34px rgba(91,44,63,.6), 0 2px 0 rgba(255,255,255,.6) inset; }
 @media (prefers-reduced-motion: reduce) { .lp-grain, .lp-script.huge, .lp-serif, .lp-next.solid::after { animation: none; } }
+
+/* final screen: a dusky night sky so the heart fireworks and lanterns glow */
+.lp-final-bg { background: radial-gradient(1400px 900px at 50% 115%, #b45b78 0%, #5a2a52 42%, #22183a 75%, #140f24 100%); }
+.lp-fireworks { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+.lp-final-bg .lp-collage { opacity: .1; }
+.lp-final-bg .lp-script.huge { background-image: linear-gradient(100deg, #ffb3c7 0%, #fff0f3 28%, #ffd9a6 44%, #ff9fb6 60%, #ffb3c7 100%); filter: drop-shadow(0 0 18px rgba(255,120,160,.45)); }
+.lp-final-bg .lp-sub { color: #ffe6ec; opacity: .85; }
+.lp-final-bg .lp-ghost { color: #ffc9d6; }

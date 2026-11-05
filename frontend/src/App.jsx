@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import fallback from '../../backend/story.json'
 import { DEFAULT_LOOK } from './game/avatar.js'
 import LovePage from './love/LovePage.jsx'
-import Creator from './components/Creator.jsx'
-import Loading from './components/Loading.jsx'
-import Town3D from './components/Town3D.jsx'
+// the town (three.js) is split into its own download so the love page opens fast;
+// it starts downloading in the background as soon as the love page is showing
+const loadTown = () => import('./components/Town3D.jsx')
+const Town3D = lazy(loadTown)
+const Loading = lazy(() => import('./components/Loading.jsx'))
+const Creator = lazy(() => import('./components/Creator.jsx'))
 
 const KEY = 'love-town-avatar'
 const load = () => {
@@ -23,6 +26,11 @@ export default function App() {
   const ready = useCallback((w) => { setWorld(w); setStage('town') }, [])
 
   useEffect(() => {
+    const id = setTimeout(() => { loadTown().catch(() => {}); import('./components/Loading.jsx').catch(() => {}) }, 2500)
+    return () => clearTimeout(id)
+  }, [])
+
+  useEffect(() => {
     fetch('/api/story')
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then(setStory)
@@ -36,11 +44,11 @@ export default function App() {
   }
 
   return (
-    <>
+    <Suspense fallback={<div className="lp" aria-busy="true" />}>
       {stage === 'love' && <LovePage story={story} herLook={avatar.look} onDone={begin} />}
       {stage === 'creator' && <Creator initial={avatar} onDone={done} />}
       {stage === 'loading' && <Loading story={story} onReady={ready} />}
       {stage === 'town' && <Town3D look={avatar.look} name={avatar.name} story={story} world={world} onEditAvatar={() => setStage('creator')} />}
-    </>
+    </Suspense>
   )
 }

@@ -3,6 +3,7 @@ import { motion, useMotionValue, useTransform } from 'framer-motion'
 import FlowerBurst, { FallingFlowers } from './FlowerBurst.jsx'
 import { flowerUrl } from './flowers.js'
 import Ambient from './Ambient.jsx'
+import Fireworks from './Fireworks.jsx'
 import { drawAvatarInked } from '../game/avatar.js'
 import './love.css'
 
@@ -264,6 +265,7 @@ function Final({ title, signature, photos, onTown, onReplay }) {
   return (
     <motion.div className="lp-screen lp-final" {...fade}>
       <div className="lp-collage">{photos.slice(0, 12).map((p, i) => <img key={p.src} src={p.src} alt="" style={{ rotate: `${((i * 41) % 18) - 9}deg` }} />)}</div>
+      <Fireworks />
       <FallingFlowers />
       <div className="lp-final-text">
         <motion.h1 className="lp-script huge" initial={{ opacity: 0, scale: 0.9, filter: 'blur(10px)' }} animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }} transition={{ duration: 1.4, delay: 0.3 }}>{title}</motion.h1>

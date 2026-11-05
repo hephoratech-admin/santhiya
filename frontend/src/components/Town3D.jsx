@@ -362,7 +362,7 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
         L.sprite.material.opacity = s.map ? 1 : clamp(1 - (d - 26) / 12, 0, 1)
         L.sprite.visible = L.sprite.material.opacity > 0.02
       }
-      W3.update(t, dt, her.group.position)
+      W3.update(t, dt, her.group.position, s.night, s.dusk)
 
       // camera: smooth orbit around her, or a bird's-eye view of the whole town
       const cam = s.cam
@@ -379,7 +379,7 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
         cam.target.z + Math.cos(cam.yaw) * Math.cos(cam.pitch) * cam.dist,
       )
       camera.lookAt(cam.target)
-      bloom.strength = 0.22 + s.night * 0.28
+      bloom.strength = 0.22 + s.night * 0.42
 
       // mini-map
       const m = miniRef.current
