@@ -299,7 +299,7 @@ export default function LovePage({ story, herLook, onDone }) {
       {/* each screen fades in on mount; no exit-waiting, which could hang with draggable children */}
       <>
         {screen === 'blossom' && <Blossom key="b" onTouch={(o) => flowersTo(o, 'pass')} />}
-        {screen === 'pass' && <Passcode key="p" code={String(page.passcode ?? '1402')} hint={page.passHint ?? ''} onOpen={() => go('hello')} />}
+        {screen === 'pass' && <Passcode key="p" code={String(page.passcode ?? '1311')} hint={page.passHint ?? ''} onOpen={() => go('hello')} />}
         {screen === 'hello' && <Hello key="h" lines={page.opening ?? []} onNext={() => go('quote')} />}
         {screen === 'quote' && <Quote key="q" lines={page.quote ?? []} onNext={() => go('fromme')} />}
         {screen === 'fromme' && <FromMe key="f" title={page.fromMe ?? 'From me to you.'} sub={page.fromMeSub ?? ''} herLook={herLook} hisLook={story.partner?.look} onNext={() => go('memories')} />}
