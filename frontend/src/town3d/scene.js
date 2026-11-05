@@ -110,6 +110,40 @@ function labelTexture(text) {
   return t
 }
 
+// soft round glow used for fireflies, lamp halos and lantern light
+function glowTexture() {
+  const c = document.createElement('canvas')
+  c.width = c.height = 64
+  const g = c.getContext('2d')
+  const r = g.createRadialGradient(32, 32, 0, 32, 32, 32)
+  r.addColorStop(0, 'rgba(255,255,255,1)')
+  r.addColorStop(0.25, 'rgba(255,255,255,.55)')
+  r.addColorStop(1, 'rgba(255,255,255,0)')
+  g.fillStyle = r; g.fillRect(0, 0, 64, 64)
+  return new THREE.CanvasTexture(c)
+}
+
+// a little paper sky-lantern with a heart on it
+function lanternTexture() {
+  const c = document.createElement('canvas')
+  c.width = 64; c.height = 96
+  const g = c.getContext('2d')
+  const halo = g.createRadialGradient(32, 50, 4, 32, 50, 46)
+  halo.addColorStop(0, 'rgba(255,190,120,.55)'); halo.addColorStop(1, 'rgba(255,150,120,0)')
+  g.fillStyle = halo; g.fillRect(0, 0, 64, 96)
+  const body = g.createLinearGradient(0, 22, 0, 78)
+  body.addColorStop(0, '#ffd9a0'); body.addColorStop(0.6, '#ffb070'); body.addColorStop(1, '#ff8a6a')
+  g.fillStyle = body
+  g.beginPath(); g.moveTo(18, 24); g.lineTo(46, 24); g.quadraticCurveTo(52, 52, 44, 76); g.lineTo(20, 76); g.quadraticCurveTo(12, 52, 18, 24); g.fill()
+  g.fillStyle = 'rgba(232,70,110,.85)'
+  g.font = '22px serif'; g.textAlign = 'center'; g.textBaseline = 'middle'
+  g.fillText('\u2665', 32, 52)
+  g.fillStyle = '#fff3c4'; g.beginPath(); g.ellipse(32, 78, 7, 3, 0, 0, 7); g.fill()
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = THREE.SRGBColorSpace
+  return t
+}
+
 export function buildTown3D(layout, { mobile = false, names = {} } = {}) {
   const scene = new THREE.Scene()
   const rand = rng(5)
@@ -237,6 +271,14 @@ export function buildTown3D(layout, { mobile = false, names = {} } = {}) {
   })
   poles.castShadow = true
   scene.add(poles, heads)
+  // warm halos around each lamp head that fade in at night
+  const glowTex = glowTexture()
+  const haloMat = new THREE.SpriteMaterial({ map: glowTex, color: '#ffc37a', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })
+  for (const p of lampPos) {
+    const h = new THREE.Sprite(haloMat)
+    h.position.copy(p); h.scale.setScalar(2.6)
+    scene.add(h)
+  }
   const lightSpots = [...lampPos, ...layout.places.map((p) => new THREE.Vector3(X(p.x), 2.6, Z(p.y) - 0.8))]
 
   // ---- bridges ----
@@ -316,8 +358,57 @@ export function buildTown3D(layout, { mobile = false, names = {} } = {}) {
   petals.geometry.setAttribute('position', new THREE.BufferAttribute(pp, 3))
   scene.add(petals)
 
+  // ---- fireflies: wander low over the grass, glow at dusk and night ----
+  const NF = mobile ? 70 : 160
+  const ffMat = new THREE.PointsMaterial({ map: glowTex, color: '#fff27a', size: 0.55, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })
+  const fireflies = new THREE.Points(new THREE.BufferGeometry(), ffMat)
+  const ffP = Array.from({ length: NF }, () => ({ x: (rand() - 0.5) * 70, y: 0.4 + rand() * 2.6, z: (rand() - 0.5) * 70, ph: rand() * 6.28, sp: 0.4 + rand() * 0.8 }))
+  fireflies.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(NF * 3), 3))
+  fireflies.frustumCulled = false
+  scene.add(fireflies)
+
+  // ---- heart sky-lanterns drifting up into the sky ----
+  const NL = mobile ? 14 : 28
+  const lanternMat = new THREE.SpriteMaterial({ map: lanternTexture(), transparent: true, opacity: 0, depthWrite: false, toneMapped: false, fog: false })
+  const spawnLantern = (l, center, fresh) => {
+    l.x = center.x + (rand() - 0.5) * 50; l.z = center.z + (rand() - 0.5) * 50
+    l.y = fresh ? 3 + rand() * 30 : 2 + rand() * 3
+    l.v = 0.35 + rand() * 0.45; l.ph = rand() * 6.28
+  }
+  const lanterns = Array.from({ length: NL }, () => {
+    const sp = new THREE.Sprite(lanternMat)
+    sp.scale.set(1.4, 2.1, 1)
+    scene.add(sp)
+    const l = { sp }
+    spawnLantern(l, { x: 0, z: 0 }, true)
+    return l
+  })
+
   // ---- per-frame animation of the world itself ----
-  const update = (t, dt, center) => {
+  const update = (t, dt, center, night = 0, dusk = 0) => {
+    const glow = Math.max(night, dusk * 0.6)
+    haloMat.opacity = night * 0.85
+    ffMat.opacity = glow * 0.95
+    lanternMat.opacity = 0.25 + glow * 0.75
+    if (ffMat.opacity > 0.01) {
+      const f = fireflies.geometry.attributes.position
+      for (let i = 0; i < NF; i++) {
+        const p = ffP[i]
+        // keep the swarm around her
+        if (p.x - center.x > 35) p.x -= 70; else if (p.x - center.x < -35) p.x += 70
+        if (p.z - center.z > 35) p.z -= 70; else if (p.z - center.z < -35) p.z += 70
+        f.array[i * 3] = p.x + Math.sin(t * p.sp + p.ph) * 0.9
+        f.array[i * 3 + 1] = p.y + Math.sin(t * p.sp * 1.7 + p.ph) * 0.35
+        f.array[i * 3 + 2] = p.z + Math.cos(t * p.sp * 0.8 + p.ph) * 0.9
+      }
+      f.needsUpdate = true
+      ffMat.size = 0.4 + Math.sin(t * 3) * 0.08
+    }
+    for (const l of lanterns) {
+      l.y += dt * l.v
+      if (l.y > 40) spawnLantern(l, center, false)
+      l.sp.position.set(l.x + Math.sin(t * 0.4 + l.ph) * 1.2, l.y, l.z + Math.cos(t * 0.3 + l.ph) * 1.2)
+    }
     wn.offset.x = t * 0.012; wn.offset.y = t * 0.008
     for (const r of rings) r.mesh.scale.setScalar(1 + Math.sin(t * 3 + r.mesh.position.x) * 0.08)
     for (const h of hearts) {
