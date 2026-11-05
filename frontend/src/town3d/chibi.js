@@ -83,6 +83,8 @@ export function makeChibi(look) {
   let phase = 0
   return {
     group: g,
+    head,
+    body,
     /** speed: 0 idle … 1 walking … ~1.7 running */
     animate(dt, speed, t) {
       if (speed > 0.05) phase += dt * (7 + speed * 3)

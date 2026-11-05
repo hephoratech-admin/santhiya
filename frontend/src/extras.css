@@ -148,3 +148,25 @@
 .t3-host canvas:active { cursor: grabbing; }
 .t3-vignette { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 50%, transparent 60%, rgba(40,25,35,.25) 100%); }
 .town3d .welcome span { color: #fffaf4; text-shadow: 0 4px 24px rgba(60,30,40,.55); }
+
+/* ---------- birthday show ---------- */
+.enter.cake { background: linear-gradient(135deg, #fff4f7, #ffe1ea); box-shadow: 0 0 0 3px rgba(255,143,171,.35), 0 14px 34px -12px rgba(196,87,116,.6); animation: bd-pulse 1.6s ease-in-out infinite; }
+@keyframes bd-pulse { 50% { box-shadow: 0 0 0 9px rgba(255,143,171,0), 0 14px 34px -12px rgba(196,87,116,.6), 0 0 26px 6px rgba(255,170,195,.55); } }
+.bd-show { position: absolute; inset: 0; z-index: 40; pointer-events: none; display: grid; place-items: center; }
+.bd-bars { position: absolute; left: 0; right: 0; height: 9vh; background: #120a14; }
+.bd-bars.top { top: 0; } .bd-bars.bottom { bottom: 0; }
+.bd-line { position: absolute; top: 13vh; margin: 0; padding: 0 1rem; text-align: center; font: 400 clamp(2rem, 6.5vw, 3.6rem) 'Great Vibes', cursive; color: #fff;
+  text-shadow: 0 0 18px rgba(255,120,160,.9), 0 2px 6px rgba(80,20,40,.6); }
+.bd-line.wish { font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: clamp(1.4rem, 4.4vw, 2.2rem); }
+.bd-card { pointer-events: auto; width: min(420px, calc(100vw - 32px)); padding: 1.6rem 1.6rem 1.4rem; border-radius: 26px; text-align: center; color: #5b2c3f;
+  background: linear-gradient(160deg, rgba(255,255,255,.92), rgba(255,236,242,.88)); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 30px 70px -20px rgba(60,10,40,.6), inset 0 1px 0 #fff; border: 1px solid rgba(255,255,255,.8); }
+.bd-cake { font-size: 3rem; line-height: 1; animation: bd-bob 1.8s ease-in-out infinite; }
+@keyframes bd-bob { 50% { transform: translateY(-6px) rotate(-4deg); } }
+.bd-card h2 { margin: .4rem 0 .5rem; font: 400 clamp(2.1rem, 7vw, 2.8rem) 'Great Vibes', cursive; color: #c4566f; line-height: 1.1; }
+.bd-card p { margin: 0 0 .6rem; font: 1.1rem/1.5 'Cormorant Garamond', Georgia, serif; }
+.bd-card .bd-from { font-style: italic; opacity: .75; }
+.bd-card button { margin-top: .4rem; border: 0; cursor: pointer; padding: .75rem 1.8rem; border-radius: 999px; color: #fff; font: 1.1rem 'Cormorant Garamond', serif;
+  background: linear-gradient(135deg, #e48ca2, #c4566f); box-shadow: 0 10px 24px -10px rgba(196,86,111,.8); }
+@media (prefers-reduced-motion: reduce) { .enter.cake, .bd-cake { animation: none; } }
+.bd-line.yay { font-size: clamp(2.2rem, 7.5vw, 4.2rem); }

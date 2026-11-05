@@ -9,6 +9,8 @@ import { BUILDINGS, COLS, ROWS, T, TS } from '../game/layout.js'
 import { buildTown3D, X, Z, toPx } from '../town3d/scene.js'
 import { makeChibi } from '../town3d/chibi.js'
 import { glowMats } from '../town3d/buildings.js'
+import { SHOW, buildBirthday, isBirthday } from '../town3d/birthday.js'
+import BirthdayShow from './BirthdayShow.jsx'
 import PlaceModal from './PlaceModal.jsx'
 import Arcade from './Arcade.jsx'
 
@@ -57,6 +59,8 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
   const [hasPartner, setHasPartner] = useState(false)
   const [games, setGames] = useState(loadGames)
   const [coarse] = useState(() => window.matchMedia?.('(pointer: coarse)').matches ?? false)
+  const [bday] = useState(() => isBirthday(story))
+  const [show, setShow] = useState(0) // >0 while the birthday show is playing (its id)
   const g = useRef({})
   const total = layout.hearts.length
   const need = story.heartsNeeded ?? 6
@@ -72,6 +76,7 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
   const interact = useCallback(() => {
     const s = g.current
     if (!s.near || s.open) return
+    if (s.near === 'cake') { s.startShow?.(); return }
     if (s.near === 'post' && s.got.size < need) { flash(`Collect ${need} hearts to open the letter box (${s.got.size}/${need})`); return }
     s.open = s.near
     s.keys.clear(); s.path = null
@@ -101,6 +106,22 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
     })
   }, [])
 
+  const endShow = useCallback(() => {
+    const s = g.current
+    s.open = null; s.show = null
+    s.party?.reset()
+    setShow(0)
+  }, [])
+  const goParty = useCallback(() => {
+    const s = g.current
+    if (!s.party || s.open) return
+    const a = s.party.approach
+    const path = layout.findPath(s.p.x, s.p.y, a.x, a.y)
+    s.path = path?.length ? path : null
+    s.stuck = 0; s.map = false; setMapMode(false)
+    s.setRoute?.(s.path)
+  }, [layout])
+
   const toggleMap = useCallback(() => { const s = g.current; s.map = !s.map; setMapMode(s.map) }, [])
   const zoomBy = (f) => { const s = g.current; s.map = false; setMapMode(false); s.cam.tDist = clamp(s.cam.tDist * f, 4.5, 60) }
   const toggleNight = () => { const s = g.current; s.clock = s.night > 0.5 ? 0.38 : 0.92 }
@@ -129,6 +150,9 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
     const names = Object.fromEntries(story.places.map((p) => [p.id, p.name.replace('Sri Ramakrishna College of Arts and Science', 'Sri Ramakrishna College')]))
     const W3 = buildTown3D(layout, { mobile, names })
     const scene = W3.scene
+    const party = bday ? buildBirthday(scene, layout, { mobile, name: story.name }) : null
+    s.party = party
+    const free = (x, y) => layout.free(x, y) && !(party && party.blocks(x, y))
     const camera = new THREE.PerspectiveCamera(50, el.clientWidth / el.clientHeight, 0.3, 2000)
     const composer = new EffectComposer(renderer)
     composer.addPass(new RenderPass(scene, camera))
@@ -164,6 +188,16 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
       route.visible = true
       const last = pts[pts.length - 1]
       targetRing.position.set(last.x, 0.08, last.z); targetRing.visible = true
+    }
+    s.setRoute = setRoute
+    s.startShow = () => {
+      if (!party || s.open) return
+      s.open = 'party'; s.keys.clear(); s.path = null; setRoute(null)
+      const c = party.cakePx
+      s.p.face = Math.atan2(c.x - s.p.x, c.y - s.p.y)
+      s.show = { t0: performance.now() / 1000, yaw: s.cam.yaw }
+      party.start(s.show.t0)
+      setShow(Date.now())
     }
 
     // ---- input ----
@@ -277,8 +311,8 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
       if (len > 0) {
         const mx = (vx / len) * sp * dt, my = (vy / len) * sp * dt
         const bx = p.x, by = p.y
-        if (layout.free(p.x + mx, p.y)) p.x += mx
-        if (layout.free(p.x, p.y + my)) p.y += my
+        if (free(p.x + mx, p.y)) p.x += mx
+        if (free(p.x, p.y + my)) p.y += my
         s.stuck = s.path && Math.hypot(p.x - bx, p.y - by) < 0.2 * sp * dt ? s.stuck + dt : 0
         p.face += angleTo(p.face, Math.atan2(vx, vy)) * Math.min(1, dt * 12)
       }
@@ -317,6 +351,7 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
       // places + hearts
       let best = null, bd = NEAR
       for (const pl of layout.places) { const d = Math.hypot(p.x - pl.x, p.y - pl.y); if (d < bd) { bd = d; best = pl.id } }
+      if (party && Math.hypot(p.x - party.cakePx.x, p.y - party.cakePx.y) < 72) best = 'cake'
       if (best !== s.near) { s.near = best; setNear(best) }
       for (const h of W3.hearts) {
         if (h.gone || s.got.has(h.id)) continue
@@ -363,16 +398,29 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
         L.sprite.visible = L.sprite.material.opacity > 0.02
       }
       W3.update(t, dt, her.group.position, s.night, s.dusk)
+      if (party) party.update(t, dt, her.group.position)
 
       // camera: smooth orbit around her, or a bird's-eye view of the whole town
       const cam = s.cam
       const intro = t - s.t0 < 4.5
       const rate = intro ? 0.9 : 4
+      if (s.show && party) {
+        // birthday show: a slow cinematic circle around the cake
+        const e = t - s.show.t0
+        // after the candles go out, lift the view so the fireworks fill the sky
+        const after = e > SHOW.blow
+        cam.target.lerp(after ? party.cakeTop.clone().setY(party.cakeTop.y + 3.5) : party.cakeTop, Math.min(1, dt * 1.5))
+        // swing slowly across the front of the party (never behind the banner)
+        cam.yaw = 0.75 + Math.sin(e * 0.22 - 0.6) * 0.75
+        cam.pitch = lerp(cam.pitch, after ? 0.14 : 0.3, Math.min(1, dt * 1.2))
+        cam.dist = lerp(cam.dist, after ? 15 : 7.5, Math.min(1, dt * 1.2))
+      } else {
       const tgt = s.map ? new THREE.Vector3(0, 0, 4) : new THREE.Vector3(X(p.x), 1.1 + p.yy, Z(p.y))
       cam.target.lerp(tgt, Math.min(1, dt * (s.map ? 3 : 6)))
       cam.yaw += angleTo(cam.yaw, s.map ? 0 : cam.tYaw) * Math.min(1, dt * (intro ? 0.9 : 6))
       cam.pitch = lerp(cam.pitch, s.map ? 1.25 : cam.tPitch, Math.min(1, dt * rate))
       cam.dist = lerp(cam.dist, s.map ? 150 : cam.tDist, Math.min(1, dt * rate))
+      }
       camera.position.set(
         cam.target.x + Math.sin(cam.yaw) * Math.cos(cam.pitch) * cam.dist,
         cam.target.y + Math.sin(cam.pitch) * cam.dist,
@@ -394,6 +442,7 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
         const sc = mw / (COLS * TS)
         mc.fillStyle = '#e0486c'
         for (const h of layout.hearts) if (!s.got.has(h.id)) { mc.beginPath(); mc.arc(h.x * sc, h.y * sc, 1.8, 0, 7); mc.fill() }
+        if (party) { mc.font = '11px serif'; mc.textAlign = 'center'; mc.textBaseline = 'middle'; mc.fillText('🎂', party.cakePx.x * sc, party.cakePx.y * sc) }
         if (s.partner) { mc.fillStyle = '#5a6690'; mc.beginPath(); mc.arc(s.partner.x * sc, s.partner.y * sc, 2.8, 0, 7); mc.fill() }
         const px = p.x * sc, py = p.y * sc
         mc.fillStyle = 'rgba(255,111,143,.25)'
@@ -408,6 +457,7 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
     // opening shot: start high above the town and swoop down to her
     s.cam.dist = 120; s.cam.pitch = 1.2; s.cam.yaw = 0.6
     setReady(true)
+    if (party) s.toastT0 = setTimeout(() => flash(`🎂 Happy Birthday, ${story.name}! Everyone is waiting for you in the park`, 6500), 4800)
     let raf, last = performance.now(), alive = true
     const frame = (now) => {
       if (!alive) return
@@ -424,6 +474,7 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
       cancelAnimationFrame(raf)
       ro.disconnect()
       clearTimeout(s.toastT)
+      clearTimeout(s.toastT0)
       window.removeEventListener('keydown', onDown)
       window.removeEventListener('keyup', onUp)
       scene.traverse((o) => {
@@ -449,7 +500,7 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
       <div className="t3-vignette" />
       <div className="welcome"><span className="script">Welcome to our little town</span></div>
 
-      {ready && (
+      {ready && !show && (
         <>
           <div className="hud-top">
             <div className="hud-left">
@@ -460,6 +511,7 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
           </div>
 
           <div className="hud-tools">
+            {bday && <button className="tool" onClick={goParty} title="Go to the birthday party">🎂</button>}
             <button className="tool" onClick={toggleNight} title="Day / night">{night ? '☾' : '☀'}</button>
             <button className="tool" onClick={() => zoomBy(0.75)} title="Zoom in">+</button>
             <button className="tool" onClick={() => zoomBy(1.33)} title="Zoom out">−</button>
@@ -472,6 +524,13 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
           </button>
 
           <AnimatePresence>
+            {near === 'cake' && !open && !mapMode && (
+              <motion.button key="cake" className="enter cake" onClick={interact} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 14 }}>
+                <small>{coarse ? 'tap here' : 'press E'}</small>
+                <span>🎂 Make a wish</span>
+                <em>everyone is here for you</em>
+              </motion.button>
+            )}
             {place && !open && !mapMode && (
               <motion.button key={near} className="enter" onClick={interact} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 14 }}>
                 <small>{coarse ? 'tap to enter' : 'press E to enter'}</small>
@@ -493,6 +552,10 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
           )}
         </>
       )}
+
+      <AnimatePresence>
+        {show > 0 && <BirthdayShow key={show} name={story.name} message={story.birthdayMessage} from={story.from} onClose={endShow} />}
+      </AnimatePresence>
 
       <AnimatePresence>
         {open === 'museum' && (
