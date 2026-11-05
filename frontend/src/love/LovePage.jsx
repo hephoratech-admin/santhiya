@@ -5,6 +5,7 @@ import { flowerUrl } from './flowers.js'
 import Ambient, { burstAt, heartBurst } from './Ambient.jsx'
 import Fireworks from './Fireworks.jsx'
 import { drawAvatarInked } from '../game/avatar.js'
+import { isBirthday } from '../birthday-date.js'
 import './love.css'
 
 const SCREENS = ['blossom', 'pass', 'hello', 'quote', 'fromme', 'memories', 'wall', 'letter', 'final']
@@ -266,7 +267,7 @@ function Letter({ lines, signature, onFinish }) {
 }
 
 // ---------- 9. finale ----------
-function Final({ title, signature, photos, onTown, onReplay }) {
+function Final({ title, sub, signature, photos, bday, onTown, onReplay }) {
   return (
     <motion.div className="lp-screen lp-final" {...fade}>
       <div className="lp-collage">{photos.slice(0, 12).map((p, i) => <img key={p.src} src={p.src} alt="" style={{ rotate: `${((i * 41) % 18) - 9}deg` }} />)}</div>
@@ -274,9 +275,10 @@ function Final({ title, signature, photos, onTown, onReplay }) {
       <FallingFlowers />
       <div className="lp-final-text">
         <motion.h1 className="lp-script huge" initial={{ opacity: 0, scale: 0.9, filter: 'blur(10px)' }} animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }} transition={{ duration: 1.4, delay: 0.3 }}>{title}</motion.h1>
+        {sub && <motion.p className="lp-script big" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1 }}>{sub}</motion.p>}
         <motion.p className="lp-sub" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.4 }}>{signature}</motion.p>
         <motion.div className="lp-final-btns" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 2.4 }}>
-          <button className="lp-next solid" onClick={onTown}>Enter our little town <b>→</b></button>
+          <button className="lp-next solid" onClick={onTown}>{bday ? '🎂 Your party is waiting' : 'Enter our little town'} <b>→</b></button>
           <button className="lp-ghost" onClick={onReplay}>↺ watch again</button>
         </motion.div>
       </div>
@@ -287,6 +289,7 @@ function Final({ title, signature, photos, onTown, onReplay }) {
 export default function LovePage({ story, herLook, onDone }) {
   const page = story.page ?? {}
   const [screen, setScreen] = useState('blossom')
+  const [bday] = useState(() => isBirthday(story))
   const [burst, setBurst] = useState(null) // { origin, then }
   const go = (s) => setScreen(s)
   const back = () => { const i = SCREENS.indexOf(screen); if (i > 1) setScreen(SCREENS[i - 1]) }
@@ -314,7 +317,7 @@ export default function LovePage({ story, herLook, onDone }) {
         {screen === 'memories' && <Memories key="m" photos={story.gallery} onNext={() => go('wall')} />}
         {screen === 'wall' && <Wall key="w" photos={story.gallery} onNext={() => go('letter')} />}
         {screen === 'letter' && <Letter key="l" lines={story.letter} signature={story.from} onFinish={(o) => flowersTo(o, 'final')} />}
-        {screen === 'final' && <Final key="z" title={page.closing ?? 'I will always love you'} signature={page.signature ?? story.from} photos={story.gallery} onTown={onDone} onReplay={() => go('blossom')} />}
+        {screen === 'final' && <Final key="z" title={bday ? `Happy Birthday, ${story.name}` : (page.closing ?? 'I will always love you')} sub={bday ? (page.closing ?? 'I will always love you') : null} signature={page.signature ?? story.from} photos={story.gallery} bday={bday} onTown={onDone} onReplay={() => go('blossom')} />}
       </>
       {burst && <FlowerBurst key={burst.id} origin={burst.origin} onCovered={() => go(burst.then)} onDone={() => setBurst(null)} />}
     </div>
