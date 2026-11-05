@@ -100,7 +100,10 @@ export function buildVegetation(scene, layout, mobile) {
     const species = t.pink ? 0 : (t.c > 52 && t.r > 30 && rand() < .6) ? 3 : rand() < .25 ? 2 : 1
     const x = (t.c + .5 + t.jx * .3) * 2 - COLS, z = (t.r + .5 + t.jy * .3) * 2 - ROWS
     dummy.position.set(x, 0, z); dummy.rotation.set(0, t.rot, 0); dummy.scale.setScalar(t.s * 1.25); dummy.updateMatrix()
-    const entry = { species, x, z, scale: t.s * 1.25, matrix: dummy.matrix.clone(), color: tint.setRGB(.88 + rand() * .18, .9 + rand() * .12, .92 + rand() * .1).clone() }
+    const matrix = dummy.matrix.clone()
+    dummy.position.y = (species === 3 ? 2.7 : 2.55) * t.s * 1.25; dummy.rotation.set(0,0,0); dummy.updateMatrix()
+    const farMatrix = dummy.matrix.clone()
+    const entry = { species, x, z, scale: t.s * 1.25, matrix, farMatrix, color: tint.setRGB(.88 + rand() * .18, .9 + rand() * .12, .92 + rand() * .1).clone() }
     const key = Math.floor(t.c / 8) + Math.floor(t.r / 8) * 9
     if (!chunks.has(key)) chunks.set(key, { sphere: new THREE.Sphere(new THREE.Vector3(Math.floor(t.c / 8) * 16 + 8 - COLS, 3, Math.floor(t.r / 8) * 16 + 8 - ROWS), 17), entries: [] })
     chunks.get(key).entries.push(entry); counts[species]++
@@ -114,12 +117,23 @@ export function buildVegetation(scene, layout, mobile) {
         geo = new THREE.PlaneGeometry(species === 2 ? 2.2 : 4.7, species === 3 ? 5.4 : 5.1)
         const tex = paintImpostor(species); resources.push(tex)
         mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: .48, side: THREE.DoubleSide, roughness: 1 })
+        // Camera-facing quads use immutable instance matrices. Rotating hundreds
+        // of Object3Ds on the CPU made portrait-map transitions unnecessarily slow.
+        mat.onBeforeCompile = s => {
+          s.vertexShader = s.vertexShader.replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\ntransformedNormal = vec3(0.,0.,1.);')
+            .replace('#include <project_vertex>', `
+              vec4 mvPosition = viewMatrix * modelMatrix * instanceMatrix * vec4(0.,0.,0.,1.);
+              vec2 cardScale = vec2(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz));
+              mvPosition.xy += transformed.xy * cardScale;
+              gl_Position = projectionMatrix * mvPosition;`)
+        }
+        mat.customProgramCacheKey = () => 'tree-impostor-gpu-billboard-v2'
         heightFog(mat)
       }
       const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, counts[species]))
       mesh.setColorAt(0, new THREE.Color('#ffffff'))
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mesh.count = 0
-      mesh.frustumCulled = false; mesh.castShadow = lod === 0; mesh.receiveShadow = true
+      mesh.frustumCulled = false; mesh.castShadow = lod === 0; mesh.receiveShadow = lod < 2
       if (lod === 0) mesh.customDepthMaterial = depth
       scene.add(mesh); lods.push(mesh)
     }
@@ -143,33 +157,40 @@ export function buildVegetation(scene, layout, mobile) {
   grassMat.customProgramCacheKey = () => 'local-grass-v1'
   const grass = new THREE.InstancedMesh(grassGeo, grassMat, mobile ? 1800 : 4500)
   grass.instanceMatrix.setUsage(THREE.DynamicDrawUsage); grass.frustumCulled = false; scene.add(grass)
+  let grassSeed = 819
+  const grassRandom = () => { grassSeed = (Math.imul(grassSeed, 1664525) + 1013904223) >>> 0; return grassSeed / 4294967296 }
   let lastX = Infinity, lastZ = Infinity, lastDensity = 0
+  const previousPosition = new THREE.Vector3(Infinity, Infinity, Infinity), previousRotation = new THREE.Quaternion()
+  let lastNear = -1, lastMid = -1, lastAspect = -1
   const update = (camera, center, tier, map) => {
-    camera.updateMatrixWorld(); projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); frustum.setFromProjectionMatrix(projection)
-    for (const lods of groups) for (const m of lods) m.count = 0
-    for (const chunk of chunkList) {
-      if (!frustum.intersectsSphere(chunk.sphere)) continue
-      for (const entry of chunk.entries) {
-        sphere.center.set(entry.x, 3, entry.z); sphere.radius = 4.5 * entry.scale
-        if (!frustum.intersectsSphere(sphere)) continue
-        const d = Math.hypot(camera.position.x - entry.x, camera.position.y - 2, camera.position.z - entry.z)
-        const lod = d < tier.near ? 0 : d < tier.mid ? 1 : 2, m = groups[entry.species][lod], i = m.count++
-        if (lod === 2) {
-          dummy.position.set(entry.x, (entry.species === 3 ? 2.7 : 2.55) * entry.scale, entry.z); dummy.quaternion.copy(camera.quaternion); dummy.scale.setScalar(entry.scale); dummy.updateMatrix(); m.setMatrixAt(i, dummy.matrix)
-        } else m.setMatrixAt(i, entry.matrix)
-        m.setColorAt(i, entry.color)
+    const moved = previousPosition.distanceToSquared(camera.position) > 1e-8 || 1 - Math.abs(previousRotation.dot(camera.quaternion)) > 1e-8 || lastNear !== tier.near || lastMid !== tier.mid || lastAspect !== camera.aspect
+    if (moved) {
+      camera.updateMatrixWorld(); projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); frustum.setFromProjectionMatrix(projection)
+      for (const lods of groups) for (const m of lods) m.count = 0
+      for (const chunk of chunkList) {
+        if (!frustum.intersectsSphere(chunk.sphere)) continue
+        for (const entry of chunk.entries) {
+          sphere.center.set(entry.x, 3, entry.z); sphere.radius = 4.5 * entry.scale
+          if (!frustum.intersectsSphere(sphere)) continue
+          const dx = camera.position.x - entry.x, dy = camera.position.y - 2, dz = camera.position.z - entry.z, distance2 = dx * dx + dy * dy + dz * dz
+          const lod = distance2 < tier.near * tier.near ? 0 : distance2 < tier.mid * tier.mid ? 1 : 2, m = groups[entry.species][lod], i = m.count++
+          m.setMatrixAt(i, lod === 2 ? entry.farMatrix : entry.matrix)
+          m.setColorAt(i, entry.color)
+        }
       }
-    }
-    for (const lods of groups) for (const m of lods) {
-      m.visible = m.count > 0
-      if (m.count) { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true }
+      for (const lods of groups) for (const m of lods) {
+        m.visible = m.count > 0
+        if (m.count) { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true }
+      }
+      previousPosition.copy(camera.position); previousRotation.copy(camera.quaternion)
+      lastNear = tier.near; lastMid = tier.mid; lastAspect = camera.aspect
     }
     grass.visible = !map; grassCenter.value.copy(center)
     if (map) return
     const cx = Math.floor(center.x), cz = Math.floor(center.z), density = Math.min(grass.instanceMatrix.count, tier.grass)
     if (cx === lastX && cz === lastZ && density === lastDensity) return
     lastX = cx; lastZ = cz; lastDensity = density
-    const radius = grassRadius.value, rng = random(819); let count = 0
+    const radius = grassRadius.value, rng = grassRandom; grassSeed = 819; let count = 0
     for (let i = 0; i < density; i++) {
       const a = rng() * Math.PI * 2, r = Math.sqrt(rng()) * radius, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r
       const c = Math.floor((x + COLS) / 2), row = Math.floor((z + ROWS) / 2)
@@ -178,5 +199,5 @@ export function buildVegetation(scene, layout, mobile) {
     }
     grass.count = count; grass.instanceMatrix.needsUpdate = true
   }
-  return { update, dispose() { resources.forEach(t => t.dispose()); depth.dispose() } }
+  return { update, frustum, dispose() { resources.forEach(t => t.dispose()); depth.dispose() } }
 }

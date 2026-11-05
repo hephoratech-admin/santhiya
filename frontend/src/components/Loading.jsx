@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { BUILDINGS, COLS, MAIN_ROW, ROWS, SOUTH_ROW, T, hash } from '../game/world.js'
+import { isBirthday } from '../birthday-date.js'
 import { buildLayout } from '../game/layout.js'
 
 const TIPS = [
@@ -87,9 +88,14 @@ export default function Loading({ story, onReady }) {
         },
         onTerrain: (s) => { snap.current = s; if (mini.current) drawMini(mini.current, s, false) },
       })
-      if (alive) setProg({ p: 0.94, label: 'Growing leaves and shaping the ground' })
+      if (alive) setProg({ p: 0.92, label: 'Growing leaves and shaping the ground' })
       await import('./Town3D.jsx')
-      if (alive) setProg({ p: 1, label: 'Your town is ready' })
+      if (alive && isBirthday(story)) {
+        setProg({ p: .94, label: 'Tuning the birthday music' })
+        const music = await import('../town3d/birthdayMusic.js')
+        await music.prepareBirthdayMusic()
+      }
+      if (alive) setProg({ p: .96, label: 'Lighting the town' })
       await sleep(200)
       if (alive) onReady(world)
     })()

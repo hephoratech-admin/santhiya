@@ -175,13 +175,42 @@ export function buildTown3D(layout, { mobile = false, names = {} } = {}) {
   const stemGeo = new THREE.CylinderGeometry(0.012, 0.014, 0.3, 4); stemGeo.translate(0, 0.15, 0)
   const stems = new THREE.InstancedMesh(stemGeo, windify(new THREE.MeshStandardMaterial({ color: '#5d9b4c', roughness: 1 }), { amp: 0.05, height: 0.3, speed: 2.1 }), fl.length)
   const fcols = ['#f490a8', '#ffffff', '#ffe27a', '#d9b8f4', '#ff9a7a'].map((c) => new THREE.Color(c))
+  const flowerRecords = []
   fl.forEach((f, i) => {
     const sc = 0.9 + rand() * 0.7
     dummy.position.set(X(f.x), 0, Z(f.y)); dummy.rotation.set(0, rand() * 6, 0); dummy.scale.setScalar(sc); dummy.updateMatrix(); stems.setMatrixAt(i, dummy.matrix)
+    const stemMatrix = dummy.matrix.clone()
     dummy.position.y = 0.3 * sc; dummy.rotation.set((rand() - 0.5) * 0.5, rand() * 6, (rand() - 0.5) * 0.5); dummy.updateMatrix()
     flowerM.setMatrixAt(i, dummy.matrix); flowerM.setColorAt(i, fcols[f.k])
+    flowerRecords.push({ stemMatrix, flowerMatrix: dummy.matrix.clone(), position: dummy.position.clone(), color: fcols[f.k] })
   })
-  scene.add(flowerM, stems)
+  flowerM.frustumCulled = stems.frustumCulled = false
+  flowerM.instanceMatrix.setUsage(THREE.DynamicDrawUsage); stems.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+  const flowerPointsGeo = new THREE.BufferGeometry()
+  const farPositions = new Float32Array(fl.length * 3), farColors = new Float32Array(fl.length * 3)
+  flowerPointsGeo.setAttribute('position', new THREE.BufferAttribute(farPositions, 3).setUsage(THREE.DynamicDrawUsage))
+  flowerPointsGeo.setAttribute('color', new THREE.BufferAttribute(farColors, 3).setUsage(THREE.DynamicDrawUsage))
+  const flowerPoints = new THREE.Points(flowerPointsGeo, new THREE.PointsMaterial({ size: .16, vertexColors: true }))
+  flowerPoints.frustumCulled = false
+  const flowerSphere = new THREE.Sphere(new THREE.Vector3(), .5)
+  const updateFlora = (frustum, camera, map) => {
+    let near = 0, far = 0
+    for (const f of flowerRecords) {
+      flowerSphere.center.copy(f.position)
+      if (!frustum.intersectsSphere(flowerSphere)) continue
+      if (!map && f.position.distanceToSquared(camera.position) < 40 * 40) {
+        flowerM.setMatrixAt(near, f.flowerMatrix); flowerM.setColorAt(near, f.color); stems.setMatrixAt(near++, f.stemMatrix)
+      } else {
+        f.position.toArray(farPositions, far * 3); f.color.toArray(farColors, far * 3); far++
+      }
+    }
+    flowerM.count = stems.count = near; flowerM.visible = stems.visible = near > 0
+    flowerM.instanceMatrix.needsUpdate = stems.instanceMatrix.needsUpdate = true
+    flowerM.instanceColor.needsUpdate = true
+    flowerPoints.visible = far > 0; flowerPointsGeo.setDrawRange(0, far)
+    flowerPointsGeo.attributes.position.needsUpdate = flowerPointsGeo.attributes.color.needsUpdate = true
+  }
+  scene.add(flowerM, stems, flowerPoints)
   // ---- street lamps ----
   const poleGeo = new THREE.CylinderGeometry(0.07, 0.1, 3.4, 8); poleGeo.translate(0, 1.7, 0)
   const poles = new THREE.InstancedMesh(poleGeo, new THREE.MeshStandardMaterial({ color: '#4d3a44', roughness: 0.4, metalness: 0.5 }), layout.lamps.length)
@@ -359,12 +388,13 @@ export function buildTown3D(layout, { mobile = false, names = {} } = {}) {
     updateIcons()
     haloBatch.update(); lanternBatch.update()
     const a = spray.geometry.attributes.position
-    sprayP.forEach((s, i) => {
+    for (let i = 0; i < sprayP.length; i++) {
+      const s = sprayP[i]
       s.t += dt * s.v
       if (s.t > 1) { s.t -= 1; s.a = Math.random() * 6.28 }
       const r = s.t * 1.4
       a.array[i * 3] = Math.cos(s.a) * r; a.array[i * 3 + 1] = 0.6 * s.t * 4 * (1 - s.t) - s.t * 1.3; a.array[i * 3 + 2] = Math.sin(s.a) * r
-    })
+    }
     a.needsUpdate = true
     const q = petals.geometry.attributes.position
     for (let i = 0; i < NP; i++) {
@@ -375,5 +405,5 @@ export function buildTown3D(layout, { mobile = false, names = {} } = {}) {
     q.needsUpdate = true
   }
 
-  return { scene, sky, stars, sun, hemi, pool, lightSpots, labels, rings, hearts, update, vegetation, dispose() { vegetation.dispose(); terrain.dispose(); disposeBatches(); haloBatch.dispose(); lanternBatch.dispose() }, puff: nature.puff, bridgeRows: [22, 23, 36, 37] }
+  return { scene, sky, stars, sun, hemi, pool, lightSpots, labels, rings, hearts, update, updateFlora, vegetation, dispose() { vegetation.dispose(); terrain.dispose(); disposeBatches(); haloBatch.dispose(); lanternBatch.dispose() }, puff: nature.puff, bridgeRows: [22, 23, 36, 37] }
 }

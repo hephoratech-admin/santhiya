@@ -8,12 +8,16 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { BUILDINGS, COLS, ROWS, T, TS } from '../game/layout.js'
 import { buildTown3D, X, Z, toPx } from '../town3d/scene.js'
+import { batchAnimated } from '../town3d/batching.js'
+import { townMapDistance } from '../town3d/camera.js'
+import { createFrameProfiler } from '../town3d/frameProfiler.js'
 import { createQuality } from '../town3d/quality.js'
 import { makeChibi } from '../town3d/chibi.js'
 import { glowMats } from '../town3d/buildings.js'
 import { SHOW, buildBirthday, isBirthday } from '../town3d/birthday.js'
 import BirthdayShow from './BirthdayShow.jsx'
 import { createBirthdayMusic } from '../town3d/birthdayMusic.js'
+import TownPreparing from './TownPreparing.jsx'
 import PlaceModal from './PlaceModal.jsx'
 import Arcade from './Arcade.jsx'
 
@@ -132,14 +136,17 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
 
   useEffect(() => {
     const el = host.current
+    let presented = false, preparationStart = performance.now()
     const s = g.current
     const mobile = window.matchMedia?.('(pointer: coarse)').matches ?? false
     const sceneParams = new URLSearchParams(window.location.search)
     const initialClock = sceneParams.has('fps') ? ({ day: .36, sunset: .74, night: .92 }[sceneParams.get('time')] ?? .36) : .36
+    const checkpoint = sceneParams.has('fps') ? layout.places.find(p => p.id === sceneParams.get('at')) : null
+    const spawn = checkpoint ? { x: checkpoint.x, y: checkpoint.y + 18 } : layout.spawn
     Object.assign(s, {
       keys: new Set(), pad: { f: false, b: false, l: false, r: false }, got: new Set(), open: null, near: null, path: null, target: null,
       partner: null, trail: Array.from({ length: 400 }, () => ({ x: 0, y: 0 })), trailHead: 0, trailCount: 0, loveT: 0, clock: initialClock, night: 0, map: false, ptrs: new Map(), stuck: 0,
-      p: { x: layout.spawn.x, y: layout.spawn.y, face: Math.PI, moving: 0, yy: 0 },
+      p: { x: spawn.x, y: spawn.y, face: Math.PI, moving: 0, yy: 0 },
       cam: { yaw: 0, pitch: 0.5, dist: 13, tYaw: 0, tPitch: 0.5, tDist: 13, target: new THREE.Vector3() },
     })
 
@@ -166,6 +173,8 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
     scene.environment = envTex
     const party = bday ? buildBirthday(scene, layout, { mobile, name: story.name }) : null
     s.party = party
+    if (party && sceneParams.has('fps') && sceneParams.get('at') === 'party') { s.p.x = party.approach.x; s.p.y = party.approach.y }
+    if (party) W3.pool[3].visible = false // the candle is the fourth dynamic point light
     const free = (x, y) => layout.free(x, y) && !(party && party.blocks(x, y))
     const camera = new THREE.PerspectiveCamera(50, el.clientWidth / el.clientHeight, 0.3, 2000)
     const composer = new EffectComposer(renderer)
@@ -174,8 +183,9 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
     composer.addPass(bloom)
     const output = new OutputPass()
     composer.addPass(output)
-    const quality = createQuality(mobile, tier => {
-      const dpr = Math.min(window.devicePixelRatio || 1, mobile ? tier.mobileDpr : tier.dpr)
+    let pendingTier = null, pendingResolution = 1
+    const configureQuality = (tier, resolution) => {
+      const dpr = Math.min(window.devicePixelRatio || 1, (mobile ? tier.mobileDpr : tier.dpr) * resolution)
       renderer.setPixelRatio(dpr)
       composer.setPixelRatio(dpr)
       composer.setSize(el.clientWidth, el.clientHeight)
@@ -186,7 +196,9 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
         W3.sun.shadow.mapSize.set(size, size)
         W3.sun.shadow.map?.dispose(); W3.sun.shadow.map = null
       }
-    })
+    }
+    const quality = createQuality(mobile, (tier, resolution) => { pendingTier = tier; pendingResolution = resolution })
+    const profiler = createFrameProfiler(renderer)
     const fpsEnabled = sceneParams.has('fps')
     const fpsEl = fpsEnabled ? document.createElement('pre') : null
     if (fpsEl) {
@@ -207,22 +219,17 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
 
     // ---- the two of us ----
     const her = makeChibi(look)
-    scene.add(her.group)
+    const him = partner ? makeChibi(partner.look) : null
+    if (him) him.group.visible = false
+    const players = batchAnimated(scene, him ? [her.group, him.group] : [her.group], { coalesce: true })
     const proxyGeo = new THREE.CapsuleGeometry(.24, .6, 2, 5)
     const herMap = new THREE.Mesh(proxyGeo, new THREE.MeshBasicMaterial({ color: look.top }))
     const hisMap = new THREE.Mesh(proxyGeo, new THREE.MeshBasicMaterial({ color: partner?.look?.top ?? '#5a6690' }))
     herMap.visible = hisMap.visible = false; scene.add(herMap, hisMap)
-    let him = null
     let avatarShadowTier = ''
-    const syncAvatarShadows = root => root.traverse(o => {
-      if (!o.isMesh) return
-      if (o.userData.townShadow === undefined) o.userData.townShadow = o.castShadow
-      o.castShadow = o.userData.townShadow && quality.tier.name !== 'low'
-    })
     s.spawnPartner = (px, py) => {
-      him = makeChibi(partner.look)
-      scene.add(him.group)
-      syncAvatarShadows(him.group)
+      if (!him) return
+      him.group.visible = true
       s.partner = { x: px, y: py, face: Math.PI, moving: 0 }
       s.trail[0].x = px; s.trail[0].y = py
       s.trail[1].x = s.p.x; s.trail[1].y = s.p.y
@@ -263,6 +270,7 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
 
     // ---- input ----
     const onDown = (e) => {
+      if (!presented) return
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
       const k = e.key.toLowerCase()
       if (KEYMAP[k]) { e.preventDefault(); if (!s.open) { s.keys.add(KEYMAP[k]); s.path = null; setRoute(null) } }
@@ -344,8 +352,9 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
     const sortLights = (A, B) => A.distanceToSquared(here) - B.distanceToSquared(here)
     const update = (dt, t) => {
       const p = s.p
+      quality.setMode(s.map ? 'map' : 'walk')
       if (avatarShadowTier !== quality.tier.name) {
-        syncAvatarShadows(her.group); if (him) syncAvatarShadows(him.group)
+        players.setShadows(quality.tier.name !== 'low')
         avatarShadowTier = quality.tier.name
       }
       s.clock = (s.clock + dt / CYCLE) % 1
@@ -461,13 +470,15 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
         lastPool = t
         here.set(X(p.x), 0, Z(p.y))
         nearest.sort(sortLights)
-        W3.pool.forEach((l, i) => { if (nearest[i]) l.position.copy(nearest[i]) })
+        for (let i = 0; i < W3.pool.length; i++) if (nearest[i]) W3.pool[i].position.copy(nearest[i])
       }
-      W3.pool.forEach((l) => { l.intensity = s.night * 9 })
+      for (const light of W3.pool) light.intensity = s.night * 9
 
       for (const L of W3.labels) {
         const pos = L.sprite.position
         const d = Math.hypot(pos.x - X(p.x), pos.z - Z(p.y))
+        const labelScale = s.map ? Math.min(1, el.clientWidth / 900) : 1
+        L.sprite.scale.set(.4 * labelScale, .05 * labelScale, 1)
         L.sprite.material.opacity = s.map ? 1 : clamp(1 - (d - 26) / 12, 0, 1)
         L.sprite.visible = L.sprite.material.opacity > 0.02
       }
@@ -493,7 +504,7 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
       cam.target.lerp(tgt, Math.min(1, dt * (s.map ? 3 : 6)))
       cam.yaw += angleTo(cam.yaw, s.map ? 0 : cam.tYaw) * Math.min(1, dt * (intro ? 0.9 : 6))
       cam.pitch = lerp(cam.pitch, s.map ? 1.25 : cam.tPitch, Math.min(1, dt * rate))
-      cam.dist = lerp(cam.dist, s.map ? 150 : cam.tDist, Math.min(1, dt * rate))
+      cam.dist = lerp(cam.dist, s.map ? townMapDistance(camera.aspect) : cam.tDist, Math.min(1, dt * rate))
       }
       camera.position.set(
         cam.target.x + Math.sin(cam.yaw) * Math.cos(cam.pitch) * cam.dist,
@@ -501,16 +512,19 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
         cam.target.z + Math.cos(cam.yaw) * Math.cos(cam.pitch) * cam.dist,
       )
       camera.lookAt(cam.target)
+      party?.render(camera, s.map)
       W3.vegetation.update(camera, her.group.position, quality.tier, s.map)
+      W3.updateFlora(W3.vegetation.frustum, camera, s.map)
       const distantAvatar = s.map && cam.dist > 80
       her.group.visible = !distantAvatar; herMap.visible = distantAvatar
       herMap.position.copy(her.group.position); herMap.position.y += .65
       if (him) {
-        him.group.visible = !distantAvatar; hisMap.visible = distantAvatar
+        him.group.visible = !!s.partner && !distantAvatar; hisMap.visible = !!s.partner && distantAvatar
         hisMap.position.copy(him.group.position); hisMap.position.y += .65
       }
       herBlob.position.copy(her.group.position); herBlob.position.y += .025
-      hisBlob.visible = !!him
+      players()
+      hisBlob.visible = !!s.partner
       if (him) { hisBlob.position.copy(him.group.position); hisBlob.position.y += .025 }
       bloom.strength = 0.22 + s.night * 0.42
 
@@ -541,31 +555,65 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
     s.cam.target.set(X(s.p.x), 1.1, Z(s.p.y))
     // opening shot: start high above the town and swoop down to her
     s.cam.dist = 120; s.cam.pitch = 1.2; s.cam.yaw = 0.6
-    setReady(true)
-    if (party) s.toastT0 = setTimeout(() => flash(`🎂 Happy Birthday, ${story.name}! Everyone is waiting for you in the park`, 6500), 4800)
     let raf, last = performance.now(), alive = true
     renderer.info.autoReset = false
+    const samples = fpsEnabled ? [] : null
+    const frameIntervals = fpsEnabled ? new Float32Array(512) : null
+    let intervalCount = 0, worstFrame = 0, maxCalls = 0, maxTriangles = 0, modalPaused = false, compilationStarted = false, shadersReady = false
+    if (fpsEnabled) window.__townPerformance = samples
     const frame = (now) => {
       if (!alive || document.hidden) return
+      // The museum owns a second WebGL renderer. Keep the town as a still
+      // background while a place/puzzle/gallery is open instead of rendering it twice.
+      if (s.open && !s.show) {
+        if (!modalPaused) { modalPaused = true; quality.reset(); intervalCount = 0; worstFrame = 0; maxCalls = 0; maxTriangles = 0 }
+        last = now; raf = requestAnimationFrame(frame); return
+      }
+      if (modalPaused) { modalPaused = false; quality.reset(); last = now }
+      if (!compilationStarted) {
+        compilationStarted = true
+        renderer.compileAsync(scene, camera).then(() => { if (alive) shadersReady = true }).catch(() => { if (alive) shadersReady = true })
+      }
       const elapsed = now - last, dt = Math.min(0.05, elapsed / 1000)
       last = now
+      const cpuStart = performance.now()
       update(dt, now / 1000)
+      // Resizing after drawing clears the canvas. Apply queued settings before
+      // the next draw so adapting quality cannot present an empty frame.
+      if (pendingTier) { configureQuality(pendingTier, pendingResolution); pendingTier = null }
       renderer.info.reset()
+      profiler.begin()
       composer.render()
+      profiler.end(performance.now() - cpuStart)
       const info = renderer.info.render
-      if (quality.sample(elapsed, info.calls, info.triangles) && fpsEl) {
+      if (fpsEnabled) {
+        frameIntervals[intervalCount++ % 512] = elapsed
+        worstFrame = Math.max(worstFrame, elapsed); maxCalls = Math.max(maxCalls, info.calls); maxTriangles = Math.max(maxTriangles, info.triangles)
+      }
+      if (quality.sample(elapsed, info.calls, info.triangles, Math.max(profiler.stats.cpuMs, profiler.stats.gpuMs || elapsed * .85)) && fpsEl) {
         fpsEl.textContent = `${quality.stats.fps.toFixed(1)} fps | ${quality.stats.ms.toFixed(1)} ms\n${info.calls} calls | ${Math.round(info.triangles / 1000)}k triangles\n${quality.stats.tier} | DPR ${renderer.getPixelRatio().toFixed(2)}`
+        fpsEl.textContent += `\nCPU ${profiler.stats.cpuMs.toFixed(1)} / GPU ${profiler.stats.gpuMs.toFixed(1)} ms`
+        const sorted = Array.from(frameIntervals.subarray(0, Math.min(intervalCount, 512))).sort((a, b) => a - b)
+        const p95FrameMs = sorted[Math.max(0, Math.ceil(sorted.length * .95) - 1)]
+        samples.push({ presented, p95FrameMs, worstFrameMs: worstFrame, maxCalls, maxTriangles, time: now, fps: quality.stats.fps, cpuMs: profiler.stats.cpuMs, gpuMs: profiler.stats.gpuMs, calls: info.calls, triangles: info.triangles, tier: quality.stats.tier, dpr: renderer.getPixelRatio(), x: s.p.x, y: s.p.y, map: s.map })
+        intervalCount = 0; worstFrame = 0; maxCalls = 0; maxTriangles = 0
+        if (samples.length > 300) samples.shift()
         fpsEl.dataset.fps = quality.stats.fps.toFixed(1)
         fpsEl.dataset.calls = info.calls
         fpsEl.dataset.triangles = info.triangles
         fpsEl.dataset.tier = quality.stats.tier
+      }
+      if (!presented && ((shadersReady && quality.stats.ms > 0 && quality.stats.ms <= 18.2 && now - preparationStart > 4500) || now - preparationStart > 20000)) {
+        presented = true; setReady(true); quality.reset(); s.clock = initialClock
+        if (party) s.toastT0 = setTimeout(() => flash(`🎂 Happy Birthday, ${story.name}! Everyone is waiting for you in the park`, 6500), 4800)
+        s.t0 = now / 1000; s.cam.dist = 120; s.cam.pitch = 1.2; s.cam.yaw = .6
       }
       raf = requestAnimationFrame(frame)
     }
     const visibility = () => {
       cancelAnimationFrame(raf)
       s.keys.clear(); s.run = false
-      if (!document.hidden && alive) { last = performance.now(); quality.reset(); raf = requestAnimationFrame(frame) }
+      if (!document.hidden && alive) { last = performance.now(); if (!presented) preparationStart = last; quality.reset(); raf = requestAnimationFrame(frame) }
     }
     document.addEventListener('visibilitychange', visibility)
     raf = requestAnimationFrame(frame)
@@ -575,12 +623,15 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
       cancelAnimationFrame(raf)
       document.removeEventListener('visibilitychange', visibility)
       fpsEl?.remove()
+      if (window.__townPerformance === samples) delete window.__townPerformance
+      profiler.dispose()
       cv.removeEventListener('pointerdown', pDown)
       cv.removeEventListener('pointermove', pMove)
       cv.removeEventListener('pointerup', pUp)
       cv.removeEventListener('pointercancel', pUp)
       cv.removeEventListener('wheel', onWheel)
-      her.dispose(); him?.dispose()
+      party?.dispose()
+      players.dispose(); her.dispose(); him?.dispose()
       W3.dispose()
       W3.sun.shadow.dispose()
       ro.disconnect()
@@ -614,7 +665,8 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
     <div className="town town3d">
       <div className="t3-host" ref={host} />
       <div className="t3-vignette" />
-      <div className="welcome"><span className="script">Welcome to our little town</span></div>
+      {!ready && <TownPreparing layout={layout} name={story.name}/>}
+      {ready && <div className="welcome"><span className="script">Welcome to our little town</span></div>}
 
       {ready && !show && (
         <>

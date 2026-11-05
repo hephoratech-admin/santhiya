@@ -104,11 +104,26 @@ export async function buildLayout({ onProgress = () => {}, onTerrain = () => {},
 
   const isSolidTile = (c, r) => c < 0 || r < 0 || c >= COLS || r >= ROWS || solid[r][c]
   const walkable = (c, r) => !isSolidTile(c, r)
+  // Trees can surround an otherwise free tile. Collectibles must belong to the
+  // spawn's connected component, with the same corner rule as tap-to-walk.
+  const reachable = new Uint8Array(COLS * ROWS), queue = new Int32Array(COLS * ROWS)
+  let head = 0, tail = 0
+  const start = Math.floor(SPAWN.r) * COLS + Math.floor(SPAWN.c)
+  reachable[start] = 1; queue[tail++] = start
+  while (head < tail) {
+    const tile = queue[head++], c = tile % COLS, r = Math.floor(tile / COLS)
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+      if ((!dc && !dr) || !walkable(c + dc, r + dr)) continue
+      if (dc && dr && (!walkable(c + dc, r) || !walkable(c, r + dr))) continue
+      const next = (r + dr) * COLS + c + dc
+      if (!reachable[next]) { reachable[next] = 1; queue[tail++] = next }
+    }
+  }
   const wanted = [[6, 17], [22, 16], [31, 17], [41, 16], [51, 17], [62, 16], [35, 8], [35, 32], [22, 33], [9, 22],
     [8, 31], [44, 34], [58, 34], [66, 30], [30, 41], [6, 40]]
   const hearts = wanted.map(([c, r], id) => {
     for (let d = 0; d < 6; d++) for (let dr = -d; dr <= d; dr++) for (let dc = -d; dc <= d; dc++) {
-      if (walkable(c + dc, r + dr)) return { id, x: (c + dc + 0.5) * TS, y: (r + dr + 0.5) * TS }
+      if (walkable(c + dc, r + dr) && reachable[(r + dr) * COLS + c + dc]) return { id, x: (c + dc + 0.5) * TS, y: (r + dr + 0.5) * TS }
     }
     return { id, x: SPAWN.c * TS, y: SPAWN.r * TS }
   })
@@ -182,7 +197,7 @@ export async function buildLayout({ onProgress = () => {}, onTerrain = () => {},
   }
 
   const parkSpots = []
-  for (let r = 25; r <= 34; r++) for (let c = 18; c <= 33; c++) if (grid[r][c] === GRASS && !solid[r][c]) parkSpots.push({ x: (c + 0.5) * TS, y: (r + 0.5) * TS })
+  for (let r = 25; r <= 34; r++) for (let c = 18; c <= 33; c++) if (grid[r][c] === GRASS && !solid[r][c] && reachable[r * COLS + c]) parkSpots.push({ x: (c + 0.5) * TS, y: (r + 0.5) * TS })
 
   onProgress(0.9, 'Lighting the lamps')
   await tick(pace)

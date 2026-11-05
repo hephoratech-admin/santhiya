@@ -5,7 +5,9 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
 const mat = (color, roughness = 0.7) => new THREE.MeshStandardMaterial({ color, roughness })
 
-export function makeChibi(look) {
+export function makeChibi(look, { simplified = false } = {}) {
+  const sphere = (r, w, h, ...angles) => new THREE.SphereGeometry(r, simplified ? Math.min(w, 12) : w, simplified ? Math.min(h, 8) : h, ...angles)
+  const capsule = (r, l, cap, radial) => new THREE.CapsuleGeometry(r, l, simplified ? Math.min(cap, 3) : cap, simplified ? Math.min(radial, 8) : radial)
   const g = new THREE.Group()
   const body = new THREE.Group()
   g.add(body)
@@ -20,26 +22,26 @@ export function makeChibi(look) {
   // legs (pivot at the hip)
   const legs = [-0.085, 0.085].map((x) => {
     const p = new THREE.Group(); p.position.set(x, 0.42, 0); body.add(p)
-    add(p, new THREE.CapsuleGeometry(0.072, 0.24, 4, 10), bottom, 0, -0.19, 0)
-    const s = add(p, new THREE.SphereGeometry(0.085, 14, 10), shoe, 0, -0.38, 0.035); s.scale.set(1, 0.62, 1.4)
+    add(p, capsule(0.072, 0.24, 4, 10), bottom, 0, -0.19, 0)
+    const s = add(p, sphere(0.085, 14, 10), shoe, 0, -0.38, 0.035); s.scale.set(1, 0.62, 1.4)
     return p
   })
   // torso + arms (pivot at the shoulder)
-  const torso = add(body, new THREE.CapsuleGeometry(0.165, 0.2, 6, 16), top, 0, 0.64, 0); torso.scale.set(1, 1, 0.86)
+  const torso = add(body, capsule(0.165, 0.2, 6, 16), top, 0, 0.64, 0); torso.scale.set(1, 1, 0.86)
   const arms = [-1, 1].map((sx) => {
     const p = new THREE.Group(); p.position.set(sx * 0.2, 0.8, 0); body.add(p)
-    const a = add(p, new THREE.CapsuleGeometry(0.052, 0.2, 4, 8), top, sx * 0.025, -0.14, 0); a.rotation.z = sx * 0.18
-    add(p, new THREE.SphereGeometry(0.058, 12, 8), skin, sx * 0.05, -0.29, 0)
+    const a = add(p, capsule(0.052, 0.2, 4, 8), top, sx * 0.025, -0.14, 0); a.rotation.z = sx * 0.18
+    add(p, sphere(0.058, 12, 8), skin, sx * 0.05, -0.29, 0)
     return p
   })
 
   // head
   const head = new THREE.Group(); head.position.y = 1.0; body.add(head)
-  add(head, new THREE.SphereGeometry(0.245, 28, 20), skin).scale.set(1, 0.96, 1)
+  add(head, sphere(0.245, 28, 20), skin).scale.set(1, 0.96, 1)
   const eyes = []
   for (const sx of [-1, 1]) {
-    const e = add(head, new THREE.SphereGeometry(0.032, 12, 10), ink, sx * 0.085, -0.035, 0.212); e.scale.set(0.85, 1.15, 0.5); eyes.push(e)
-    add(head, new THREE.SphereGeometry(0.009, 6, 6), new THREE.MeshBasicMaterial({ color: '#fff' }), sx * 0.085 + 0.01, -0.02, 0.228)
+    const e = add(head, sphere(0.032, 12, 10), ink, sx * 0.085, -0.035, 0.212); e.scale.set(0.85, 1.15, 0.5); eyes.push(e)
+    add(head, sphere(0.009, 6, 6), new THREE.MeshBasicMaterial({ color: '#fff' }), sx * 0.085 + 0.01, -0.02, 0.228)
     const b = add(head, new THREE.CircleGeometry(0.042, 16), new THREE.MeshBasicMaterial({ color: '#ff8aa3', transparent: true, opacity: 0.45 }), sx * 0.135, -0.1, 0.2)
     b.rotation.y = sx * 0.55; b.castShadow = false
   }
@@ -49,35 +51,35 @@ export function makeChibi(look) {
   // hair: a cap on top + a back piece, styled by look.hair
   const style = look.hair
   const capLen = style === 'boy' ? 0.42 : 0.47
-  const cap = add(head, new THREE.SphereGeometry(0.262, 28, 16, 0, Math.PI * 2, 0, Math.PI * capLen), hair, 0, 0.012, -0.004)
+  const cap = add(head, sphere(0.262, 28, 16, 0, Math.PI * 2, 0, Math.PI * capLen), hair, 0, 0.012, -0.004)
   cap.rotation.x = -0.12
   const backLen = { long: 0.78, braid: 0.66, bun: 0.62, short: 0.66, boy: 0.56 }[style] ?? 0.66
-  add(head, new THREE.SphereGeometry(0.268, 28, 16, Math.PI, Math.PI, 0, Math.PI * backLen), hair, 0, 0, -0.01)
+  add(head, sphere(0.268, 28, 16, Math.PI, Math.PI, 0, Math.PI * backLen), hair, 0, 0, -0.01)
   if (style === 'long') {
-    const l = add(head, new THREE.CapsuleGeometry(0.19, 0.32, 6, 14), hair, 0, -0.33, -0.1); l.scale.set(1.18, 1, 0.5)
-    for (const sx of [-1, 1]) { const lock = add(head, new THREE.CapsuleGeometry(0.06, 0.3, 4, 8), hair, sx * 0.2, -0.26, 0.04); lock.rotation.z = sx * 0.08 }
+    const l = add(head, capsule(0.19, 0.32, 6, 14), hair, 0, -0.33, -0.1); l.scale.set(1.18, 1, 0.5)
+    for (const sx of [-1, 1]) { const lock = add(head, capsule(0.06, 0.3, 4, 8), hair, sx * 0.2, -0.26, 0.04); lock.rotation.z = sx * 0.08 }
   } else if (style === 'short') {
-    for (const sx of [-1, 1]) add(head, new THREE.CapsuleGeometry(0.07, 0.12, 4, 8), hair, sx * 0.2, -0.09, 0.02)
+    for (const sx of [-1, 1]) add(head, capsule(0.07, 0.12, 4, 8), hair, sx * 0.2, -0.09, 0.02)
   } else if (style === 'bun') {
-    add(head, new THREE.SphereGeometry(0.11, 16, 12), hair, 0, 0.26, -0.08)
+    add(head, sphere(0.11, 16, 12), hair, 0, 0.26, -0.08)
   } else if (style === 'braid') {
-    for (let i = 0; i < 6; i++) add(head, new THREE.SphereGeometry(0.06 - i * 0.004, 10, 8), hair, 0.17, -0.12 - i * 0.075, -0.1 + i * 0.01)
-    add(head, new THREE.SphereGeometry(0.035, 8, 6), mat('#ff8fab'), 0.17, -0.58, -0.04)
+    for (let i = 0; i < 6; i++) add(head, sphere(0.06 - i * 0.004, 10, 8), hair, 0.17, -0.12 - i * 0.075, -0.1 + i * 0.01)
+    add(head, sphere(0.035, 8, 6), mat('#ff8fab'), 0.17, -0.58, -0.04)
   }
 
   // accessories
   if (look.extra === 'flower') {
     const f = new THREE.Group(); f.position.set(0.19, 0.16, 0.11); head.add(f)
     const petal = mat('#ff8fab', 0.5)
-    for (let i = 0; i < 5; i++) { const a = (i / 5) * Math.PI * 2; add(f, new THREE.SphereGeometry(0.035, 10, 8), petal, Math.cos(a) * 0.04, Math.sin(a) * 0.04, 0) }
-    add(f, new THREE.SphereGeometry(0.025, 8, 6), mat('#ffe27a'), 0, 0, 0.02)
+    for (let i = 0; i < 5; i++) { const a = (i / 5) * Math.PI * 2; add(f, sphere(0.035, 10, 8), petal, Math.cos(a) * 0.04, Math.sin(a) * 0.04, 0) }
+    add(f, sphere(0.025, 8, 6), mat('#ffe27a'), 0, 0, 0.02)
     f.rotation.y = 0.9
   } else if (look.extra === 'glasses') {
     const frame = new THREE.MeshStandardMaterial({ color: '#4a2a36', roughness: 0.3, metalness: 0.4 })
     for (const sx of [-1, 1]) add(head, new THREE.TorusGeometry(0.055, 0.008, 6, 20), frame, sx * 0.085, -0.035, 0.225)
     add(head, new THREE.BoxGeometry(0.05, 0.008, 0.008), frame, 0, -0.03, 0.235)
   } else if (look.extra === 'beard') {
-    const bd = add(head, new THREE.SphereGeometry(0.252, 24, 12, 0, Math.PI, Math.PI * 0.6, Math.PI * 0.32), hair, 0, 0, 0.004)
+    const bd = add(head, sphere(0.252, 24, 12, 0, Math.PI, Math.PI * 0.6, Math.PI * 0.32), hair, 0, 0, 0.004)
     bd.scale.set(1, 1, 1.02)
     add(head, new THREE.BoxGeometry(0.1, 0.022, 0.02), hair, 0, -0.075, 0.232)
   }

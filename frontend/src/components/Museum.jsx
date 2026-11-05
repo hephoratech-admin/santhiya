@@ -78,11 +78,14 @@ function textTex(lines, { w = 1024, h = 256, bg = null, color = '#3b2a30', fonts
 
 // ---------- the scene ----------
 function buildMuseum({ photos, renderer, onLoaded }) {
+  const mobile = window.matchMedia?.('(pointer: coarse)').matches ?? false
   const scene = new THREE.Scene()
   scene.background = new THREE.Color('#efe9df')
   scene.fog = new THREE.Fog('#efe9df', 22, 62)
   const pm = new THREE.PMREMGenerator(renderer)
-  scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture
+  const room = new RoomEnvironment(), environment = pm.fromScene(room, .04)
+  room.dispose()
+  scene.environment = environment.texture
   scene.environmentIntensity = 0.55
 
   const perWall = Math.ceil(photos.length / 2)
@@ -101,7 +104,7 @@ function buildMuseum({ photos, renderer, onLoaded }) {
     manager.itemStart(src)
     const img = new Image()
     img.onload = () => {
-      const k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight))
+      const k = Math.min(1, (mobile ? 768 : 1280) / Math.max(img.naturalWidth, img.naturalHeight))
       const c = document.createElement('canvas')
       c.width = Math.round(img.naturalWidth * k)
       c.height = Math.round(img.naturalHeight * k)
@@ -118,7 +121,7 @@ function buildMuseum({ photos, renderer, onLoaded }) {
 
   // floor: wood over a real mirror, so the gallery reflects softly in the polish
   const mirror = new Reflector(new THREE.PlaneGeometry(HALL_W, L + 3), {
-    textureWidth: Math.min(1024, window.innerWidth), textureHeight: Math.min(1024, window.innerHeight), color: 0x9a9a9a,
+    textureWidth: Math.min(mobile ? 512 : 1024, window.innerWidth), textureHeight: Math.min(mobile ? 512 : 1024, window.innerHeight), color: 0x9a9a9a,
   })
   mirror.rotation.x = -Math.PI / 2
   mirror.position.set(0, -0.001, midZ + 1.5)
@@ -176,18 +179,26 @@ function buildMuseum({ photos, renderer, onLoaded }) {
   sun.position.set(2, 12, midZ + 4)
   sun.target.position.set(0, 0, midZ)
   sun.castShadow = true
-  sun.shadow.mapSize.set(2048, 2048)
+  sun.shadow.mapSize.set(mobile ? 1024 : 2048, mobile ? 1024 : 2048)
   sun.shadow.camera.left = -HALL_W; sun.shadow.camera.right = HALL_W
   sun.shadow.camera.top = L / 2 + 4; sun.shadow.camera.bottom = -L / 2 - 4
   sun.shadow.camera.near = 1; sun.shadow.camera.far = 30
   sun.shadow.radius = 6
   sun.shadow.bias = -0.0005
   scene.add(sun, sun.target)
-  for (let z = -2; z > endZ; z -= 8) {
-    const pl = new THREE.PointLight('#ffd9a8', 6, 11, 2)
-    pl.position.set(0, HALL_H - 0.8, z)
-    scene.add(pl)
+  const lightPositions = []
+  for (let z = -2; z > endZ; z -= 8) lightPositions.push(z)
+  const lightPool = Array.from({length: Math.min(4, lightPositions.length)}, () => {
+    const light = new THREE.PointLight('#ffd9a8', 6, 11, 2); light.position.y = HALL_H - .8; scene.add(light); return light
+  })
+  let lastLight = -1
+  const updateLights = z => {
+    const first = Math.max(0, Math.min(lightPositions.length - lightPool.length, Math.floor((-z - 2) / 8) - 1))
+    if (first === lastLight) return
+    lastLight = first
+    for (let i = 0; i < lightPool.length; i++) lightPool[i].position.z = lightPositions[first + i]
   }
+  updateLights(0)
 
   // frames
   const goldMat = new THREE.MeshStandardMaterial({ color: '#b48a4a', metalness: 0.85, roughness: 0.32 })
@@ -313,7 +324,7 @@ function buildMuseum({ photos, renderer, onLoaded }) {
     obstacles.push({ x0: x - 0.45, x1: x + 0.45, z0: z - 0.45, z1: z + 0.45 })
   }
 
-  return { scene, endZ, clickables, frames, obstacles, pm }
+  return { scene, endZ, clickables, frames, obstacles, pm, environment, mirror, sun, updateLights }
 }
 
 // billboard avatar that redraws its sprite only when its pose changes
@@ -372,7 +383,7 @@ export default function Museum({ photos, herLook, hisLook, onClose }) {
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     el.appendChild(renderer.domElement)
 
-    const { scene, endZ, clickables, frames, obstacles, pm } = buildMuseum({ photos, renderer, onLoaded: () => setLoaded(true) })
+    const { scene, endZ, clickables, frames, obstacles, pm, environment, mirror, sun, updateLights } = buildMuseum({ photos, renderer, onLoaded: () => setLoaded(true) })
     const camera = new THREE.PerspectiveCamera(58, el.clientWidth / el.clientHeight, 0.05, 80)
     const composer = new EffectComposer(renderer)
     composer.addPass(new RenderPass(scene, camera))
@@ -446,8 +457,9 @@ export default function Museum({ photos, herLook, hisLook, onClose }) {
 
     const blocked = (x, z) => obstacles.some((o) => x > o.x0 - 0.25 && x < o.x1 + 0.25 && z > o.z0 - 0.25 && z < o.z1 + 0.25)
     const angleDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b))
-    let raf, last = performance.now(), lastNear = null
+    let raf, last = performance.now(), lastNear = null, alive = true
     const tick = (now) => {
+      if (!alive || document.hidden) return
       const dt = Math.min(0.05, (now - last) / 1000)
       last = now
       const k = s.keys
@@ -531,12 +543,21 @@ export default function Museum({ photos, herLook, hisLook, onClose }) {
       }
       if (near !== lastNear) { lastNear = near; setNearFrame(near) }
 
+      updateLights(s.z)
       composer.render()
       raf = requestAnimationFrame(tick)
     }
+    const visibility = () => {
+      cancelAnimationFrame(raf); s.keys.clear()
+      if (alive && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(tick) }
+    }
+    document.addEventListener('visibilitychange', visibility)
     raf = requestAnimationFrame(tick)
 
     return () => {
+      alive = false
+      document.removeEventListener('visibilitychange', visibility)
+      cv.removeEventListener('pointerdown', onDown); cv.removeEventListener('pointermove', onMove); cv.removeEventListener('pointerup', onUp); cv.removeEventListener('wheel', onWheel)
       cancelAnimationFrame(raf)
       ro.disconnect()
       window.removeEventListener('keydown', down)
@@ -546,7 +567,8 @@ export default function Museum({ photos, herLook, hisLook, onClose }) {
         const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []
         ms.forEach((m) => { Object.values(m).forEach((v) => v?.isTexture && v.dispose()); m.dispose() })
       })
-      pm.dispose()
+      pm.dispose(); environment.dispose(); mirror.dispose(); sun.shadow.dispose()
+      for (const pass of composer.passes) pass.dispose?.()
       composer.dispose()
       renderer.dispose()
       el.removeChild(renderer.domElement)

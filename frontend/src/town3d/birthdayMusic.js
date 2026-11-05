@@ -24,11 +24,8 @@ const CHORDS = [
 export const LINE_TIMES = [0, 6, 12, 18].map((b) => SONG_START + b * BEAT)
 export const SONG_END = SONG_START + 25 * BEAT
 
-export function createBirthdayMusic() {
-  const AC = window.AudioContext || window.webkitAudioContext
-  if (!AC) return { play() {}, blow() {}, stop() {}, setMuted() {} }
-  const ac = new AC()
-  if (ac.state === 'suspended') ac.resume()
+function synthBirthday(ac) {
+  if (ac.state === 'suspended' && ac.close) ac.resume()
   const master = ac.createGain(); master.gain.value = 0.9
   const comp = ac.createDynamicsCompressor()
   master.connect(comp); comp.connect(ac.destination)
@@ -85,7 +82,7 @@ export function createBirthdayMusic() {
   let t0 = 0
   return {
     play() {
-      if (ac.state === 'suspended') ac.resume()
+      if (ac.state === 'suspended' && ac.close) ac.resume()
       t0 = ac.currentTime + 0.05
       const s = t0 + SONG_START
       // a little sparkle to start
@@ -117,5 +114,52 @@ export function createBirthdayMusic() {
       setTimeout(() => { nodes.forEach((n) => { try { n.stop() } catch { /* already stopped */ } }); ac.close().catch(() => {}) }, 500)
     },
     setMuted(m) { master.gain.setTargetAtTime(m ? 0 : 0.9, ac.currentTime, 0.05) },
+  }
+}
+
+
+let prepared = null, preparation = null
+
+// Render the existing score during loading. Starting the show then creates one
+// source instead of hundreds of oscillators, clap filters and gain nodes.
+export function prepareBirthdayMusic() {
+  if (prepared) return Promise.resolve(prepared)
+  if (preparation) return preparation
+  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext
+  if (!OAC) return Promise.resolve(null)
+  preparation = (async () => {
+    const ac = new OAC(2, 34 * 24000, 24000)
+    const score = synthBirthday(ac)
+    score.play(); score.blow(SONG_END + 3)
+    prepared = await ac.startRendering()
+    return prepared
+  })().catch(() => null)
+  return preparation
+}
+
+export function createBirthdayMusic() {
+  const AC = window.AudioContext || window.webkitAudioContext
+  if (!AC) return { play() {}, blow() {}, stop() {}, setMuted() {} }
+  const ac = new AC()
+  if (!prepared) return synthBirthday(ac)
+  const source = ac.createBufferSource(), gain = ac.createGain()
+  source.buffer = prepared; source.connect(gain); gain.connect(ac.destination)
+  let started = false, stopped = false
+  return {
+    play() {
+      if (ac.state === 'suspended') ac.resume()
+      if (!started) { source.start(ac.currentTime); started = true }
+    },
+    blow() {}, // already placed at the unchanged timestamp in the prepared score
+    stop() {
+      if (stopped) return
+      stopped = true
+      gain.gain.setTargetAtTime(0, ac.currentTime, .1)
+      setTimeout(() => {
+        try { source.stop() } catch { /* already ended */ }
+        source.disconnect(); gain.disconnect(); ac.close().catch(() => {})
+      }, 500)
+    },
+    setMuted(m) { gain.gain.setTargetAtTime(m ? 0 : 1, ac.currentTime, .05) },
   }
 }

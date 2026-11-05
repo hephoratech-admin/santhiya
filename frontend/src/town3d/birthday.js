@@ -1,6 +1,7 @@
 // Birthday party for the 3D town: cake, balloons, bunting, banner, guests and a little show.
 // Turned on by isBirthday() in ../birthday-date.js.
 import * as THREE from 'three'
+import { batchAnimated, batchArchitecture, batchBillboards } from './batching.js'
 import { makeChibi } from './chibi.js'
 import { heartShape } from './buildings.js'
 import { X, Z } from './scene.js'
@@ -58,6 +59,7 @@ const BALLOON = ['#ff6f91', '#ffd166', '#ffffff', '#c9a8e8', '#ff9a7a', '#7fd1b9
 const PARTY = ['#ff6f91', '#ffd166', '#7fd1b9', '#c9a8e8', '#ff9a7a', '#8ec5ff']
 
 export function buildBirthday(scene, layout, { mobile = false, name = 'You' } = {}) {
+  const excluded = new Set(); scene.traverse(o => excluded.add(o))
   const rand = rng(1311)
   const pick = (a) => a[(rand() * a.length) | 0]
   const anim = [] // per-frame callbacks
@@ -146,9 +148,9 @@ export function buildBirthday(scene, layout, { mobile = false, name = 'You' } = 
   anim.push((t) => { for (let i = 0; i < bpos.count; i++) bpos.array[i * 3 + 2] = bx0[i * 3 + 2] + Math.sin(t * 2.2 + bx0[i * 3] * 0.9) * 0.08; bpos.needsUpdate = true })
 
   // ---- balloons ----
-  const balloonGeo = new THREE.SphereGeometry(0.34, 20, 16); balloonGeo.scale(1, 1.18, 1)
+  const balloonGeo = new THREE.SphereGeometry(0.34, mobile ? 12 : 20, mobile ? 8 : 16); balloonGeo.scale(1, 1.18, 1)
   const knotGeo = new THREE.ConeGeometry(0.06, 0.09, 8); knotGeo.rotateX(Math.PI)
-  const heartGeo = new THREE.ExtrudeGeometry(heartShape(0.62), { depth: 0.16, bevelEnabled: true, bevelSize: 0.06, bevelThickness: 0.06, bevelSegments: 3 }); heartGeo.center()
+  const heartGeo = new THREE.ExtrudeGeometry(heartShape(0.62), { depth: 0.16, bevelEnabled: true, bevelSize: 0.06, bevelThickness: 0.06, bevelSegments: mobile ? 1 : 3, curveSegments: mobile ? 6 : 12 }); heartGeo.center()
   const stringMat = new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.7 })
   const balloons = []
   const cluster = (x, z, n, h0 = 2.4) => {
@@ -159,10 +161,8 @@ export function buildBirthday(scene, layout, { mobile = false, name = 'You' } = 
       m.castShadow = shadows
       const knot = new THREE.Mesh(knotGeo, m.material); knot.position.y = isHeart ? -0.42 : -0.42; m.add(knot)
       const off = { x: (rand() - 0.5) * 0.9, z: (rand() - 0.5) * 0.9, h: h0 + rand() * 1.1 }
-      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), stringMat)
-      line.frustumCulled = false
-      scene.add(m, line)
-      balloons.push({ m, line, x, z, off, ph: rand() * 6, heart: isHeart })
+      scene.add(m)
+      balloons.push({ m, x, z, off, ph: rand() * 6, heart: isHeart })
     }
   }
   // around the table, on the banner poles, around the plaza and along the main road
@@ -172,15 +172,20 @@ export function buildBirthday(scene, layout, { mobile = false, name = 'You' } = 
   for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; cluster(fx + Math.cos(a) * 3.2, fz + Math.sin(a) * 3.2, mobile ? 2 : 3, 1.8) }
   const nearLamps = layout.lamps.map((l) => ({ x: X(l.x), z: Z(l.y) })).filter((l) => Math.hypot(l.x - fx, l.z - fz) < 34 || Math.hypot(l.x - cx, l.z - cz) < 22)
   for (const l of nearLamps) cluster(l.x + 0.3, l.z, 2, 3.2)
+  const stringGeometry = new THREE.BufferGeometry()
+  stringGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(balloons.length * 6), 3))
+  const strings = new THREE.LineSegments(stringGeometry, stringMat); strings.frustumCulled = false; scene.add(strings)
   anim.push((t) => {
-    for (const b of balloons) {
+    for (let i = 0; i < balloons.length; i++) {
+      const b = balloons[i]
       const sx = b.x + b.off.x + Math.sin(t * 0.9 + b.ph) * 0.18, sz = b.z + b.off.z + Math.cos(t * 0.7 + b.ph) * 0.18
       const sy = b.off.h + Math.sin(t * 1.3 + b.ph) * 0.12
       b.m.position.set(sx, sy, sz)
       b.m.rotation.set(Math.sin(t + b.ph) * 0.12, b.heart ? Math.sin(t * 0.6 + b.ph) * 0.6 : 0, Math.cos(t * 0.8 + b.ph) * 0.12)
-      const a = b.line.geometry.attributes.position
-      a.setXYZ(0, b.x, b.heart ? 0.9 : 0.8, b.z); a.setXYZ(1, sx, sy - 0.45, sz); a.needsUpdate = true
+      const a = stringGeometry.attributes.position
+      a.setXYZ(i * 2, b.x, b.heart ? 0.9 : 0.8, b.z); a.setXYZ(i * 2 + 1, sx, sy - 0.45, sz)
     }
+    stringGeometry.attributes.position.needsUpdate = true
   })
 
   // ---- bunting: little flags strung from lamp to lamp ----
@@ -288,9 +293,10 @@ export function buildBirthday(scene, layout, { mobile = false, name = 'You' } = 
     skin: pick(OPTIONS.skin), hairColor: pick(OPTIONS.hairColor), hair: pick(['long', 'braid', 'bun', 'short', 'boy', 'boy']),
     top: pick(OPTIONS.top), bottom: pick(OPTIONS.bottom), extra: pick(['none', 'none', 'glasses', 'flower', 'beard']),
   })
+  const sharedHat = hatTex('#ffffff', '#a8a8a8')
   const addHat = (chibi) => {
-    const [a, b] = [pick(PARTY), pick(PARTY)]
-    const hat = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.32, 16), new THREE.MeshStandardMaterial({ map: hatTex(a, b), roughness: 0.6 }))
+    const a = pick(PARTY)
+    const hat = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.32, 16), new THREE.MeshStandardMaterial({ map: sharedHat, color: a, roughness: 0.6 }))
     hat.position.set(0.04, 0.33, 0); hat.rotation.z = -0.2
     const pom = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), std('#ffffff')); pom.position.y = 0.17; hat.add(pom)
     chibi.head.add(hat)
@@ -302,7 +308,7 @@ export function buildBirthday(scene, layout, { mobile = false, name = 'You' } = 
     // a horseshoe around the table, open to the east where she walks in
     const a = Math.PI * 0.32 + (k / (NG - 1)) * Math.PI * 1.36
     const r = 2.7 + (k % 2) * 0.55
-    const c = makeChibi(randomLook()); addHat(c)
+    const look = randomLook(), c = makeChibi(look, { simplified: true }); c.group.userData.actorColor = look.top; addHat(c)
     if (!shadows) noShadow(c.group)
     const gx = cx + Math.cos(a) * r, gz = cz + Math.sin(a) * r
     c.group.position.set(gx, 0, gz)
@@ -314,7 +320,7 @@ export function buildBirthday(scene, layout, { mobile = false, name = 'You' } = 
   const NW = mobile ? 3 : 7
   const spots = [...layout.places.map((p) => ({ x: p.x, y: p.y + 30 })), ...layout.parkSpots.filter((_, i) => i % 9 === 0)]
   for (let k = 0; k < NW; k++) {
-    const c = makeChibi(randomLook()); addHat(c)
+    const look = randomLook(), c = makeChibi(look, { simplified: true }); c.group.userData.actorColor = look.top; addHat(c)
     noShadow(c.group)
     const s0 = pick(spots)
     scene.add(c.group)
@@ -335,6 +341,33 @@ export function buildBirthday(scene, layout, { mobile = false, name = 'You' } = 
       w.c.group.position.set(X(w.x), 0, Z(w.y)); w.c.group.rotation.y = w.face
     }
   })
+
+  const actors = [...guests.map(g => g.c), ...walkers.map(w => w.c)]
+  scene.updateMatrixWorld(true)
+  for (const flame of flames) { scene.attach(flame.core); scene.attach(flame.f) }
+  const flameBatch = batchBillboards(scene, flames.map(fl => fl.f))
+  const movingRoots = [...actors.map(c => c.group), ...balloons.map(b => b.m), ...flames.map(fl => fl.core)]
+  for (const root of movingRoots) root.removeFromParent()
+  excluded.add(heart)
+  const disposeStatic = batchArchitecture(scene, excluded)
+  const updateBatches = batchAnimated(scene, movingRoots, { coalesce: true })
+  const proxy = new THREE.InstancedMesh(new THREE.CapsuleGeometry(.22, .55, 2, 5), new THREE.MeshBasicMaterial(), actors.length)
+  proxy.frustumCulled = false; proxy.instanceMatrix.setUsage(THREE.DynamicDrawUsage); proxy.count = 0; scene.add(proxy)
+  const proxyDummy = new THREE.Object3D(), actorColors = actors.map(c => new THREE.Color(c.group.userData.actorColor))
+  const render = (camera, map) => {
+    let n = 0
+    for (let i = 0; i < actors.length; i++) {
+      const root = actors[i].group
+      root.visible = !map && root.position.distanceToSquared(camera.position) < 55 * 55
+      if (!root.visible) {
+        proxyDummy.position.copy(root.position); proxyDummy.position.y += .65; proxyDummy.updateMatrix()
+        proxy.setMatrixAt(n, proxyDummy.matrix); proxy.setColorAt(n++, actorColors[i])
+      }
+    }
+    proxy.count = n; proxy.visible = n > 0; proxy.instanceMatrix.needsUpdate = true
+    if (proxy.instanceColor) proxy.instanceColor.needsUpdate = true
+    updateBatches(); flameBatch.update()
+  }
 
   // ---- the show ----
   let showT = -1, blown = false
@@ -372,5 +405,5 @@ export function buildBirthday(scene, layout, { mobile = false, name = 'You' } = 
   // she and the guests can't walk through the table
   const blocks = (px, py) => Math.hypot(px - cakePx.x, py - cakePx.y) < 30
   const cakeTop = new THREE.Vector3(cx, topY, cz)
-  return { update, start, reset, blocks, cakePx, cakeTop, approach: { x: cakePx.x + 44, y: cakePx.y } }
+  return { update, render, dispose() { disposeStatic(); updateBatches.dispose(); flameBatch.dispose(); for (const actor of actors) actor.dispose() }, start, reset, blocks, cakePx, cakeTop, approach: { x: cakePx.x + 44, y: cakePx.y } }
 }
