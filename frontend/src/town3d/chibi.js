@@ -35,8 +35,9 @@ export function makeChibi(look) {
   // head
   const head = new THREE.Group(); head.position.y = 1.0; body.add(head)
   add(head, new THREE.SphereGeometry(0.245, 28, 20), skin).scale.set(1, 0.96, 1)
+  const eyes = []
   for (const sx of [-1, 1]) {
-    const e = add(head, new THREE.SphereGeometry(0.032, 12, 10), ink, sx * 0.085, -0.035, 0.212); e.scale.set(0.85, 1.15, 0.5)
+    const e = add(head, new THREE.SphereGeometry(0.032, 12, 10), ink, sx * 0.085, -0.035, 0.212); e.scale.set(0.85, 1.15, 0.5); eyes.push(e)
     add(head, new THREE.SphereGeometry(0.009, 6, 6), new THREE.MeshBasicMaterial({ color: '#fff' }), sx * 0.085 + 0.01, -0.02, 0.228)
     const b = add(head, new THREE.CircleGeometry(0.042, 16), new THREE.MeshBasicMaterial({ color: '#ff8aa3', transparent: true, opacity: 0.45 }), sx * 0.135, -0.1, 0.2)
     b.rotation.y = sx * 0.55; b.castShadow = false
@@ -81,6 +82,7 @@ export function makeChibi(look) {
   }
 
   let phase = 0
+  let nextBlink = 1 + Math.random() * 3, blinkT = -1
   return {
     group: g,
     head,
@@ -94,6 +96,15 @@ export function makeChibi(look) {
       arms[0].rotation.x = -sw * 0.8; arms[1].rotation.x = sw * 0.8
       body.position.y = Math.abs(Math.sin(phase)) * 0.045 * k + (k < 0.05 ? Math.sin(t * 2.2) * 0.008 : 0)
       head.rotation.z = Math.sin(phase * 0.5) * 0.04 * k
+      // blink every few seconds
+      nextBlink -= dt
+      if (nextBlink <= 0) { blinkT = 0; nextBlink = 2 + Math.random() * 4 }
+      if (blinkT >= 0) {
+        blinkT += dt
+        const c = blinkT < 0.07 ? 1 - blinkT / 0.07 : Math.min(1, (blinkT - 0.07) / 0.08)
+        for (const e of eyes) e.scale.y = 1.15 * Math.max(0.12, c)
+        if (blinkT > 0.15) { blinkT = -1; for (const e of eyes) e.scale.y = 1.15 }
+      }
     },
   }
 }

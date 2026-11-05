@@ -170,3 +170,5 @@
   background: linear-gradient(135deg, #e48ca2, #c4566f); box-shadow: 0 10px 24px -10px rgba(196,86,111,.8); }
 @media (prefers-reduced-motion: reduce) { .enter.cake, .bd-cake { animation: none; } }
 .bd-line.yay { font-size: clamp(2.2rem, 7.5vw, 4.2rem); }
+.bd-mute { position: absolute; top: calc(9vh + 12px); right: 14px; pointer-events: auto; width: 42px; height: 42px; border-radius: 50%; border: 0; cursor: pointer; font-size: 1.2rem;
+  background: rgba(255,255,255,.75); box-shadow: 0 6px 16px -8px rgba(0,0,0,.5); }

@@ -6,11 +6,13 @@ import { heartShape } from './buildings.js'
 import { X, Z } from './scene.js'
 import { OPTIONS } from '../game/avatar.js'
 import { TS } from '../game/layout.js'
+import { LINE_TIMES, SONG_END } from './birthdayMusic.js'
 
 export { isBirthday } from '../birthday-date.js'
 
 // timeline of the celebration (seconds after she makes her wish)
-export const SHOW = { song: [0, 2.2, 4.4, 6.8], wish: 9.2, blow: 11.6, end: 17 }
+// follows the music in birthdayMusic.js: four song lines, then the wish, then the candles go out
+export const SHOW = { song: LINE_TIMES, wish: SONG_END + 0.4, blow: SONG_END + 3, end: SONG_END + 8.4 }
 
 function rng(seed) {
   let s = seed
