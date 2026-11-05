@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, useMotionValue, useTransform } from 'framer-motion'
 import FlowerBurst, { FallingFlowers } from './FlowerBurst.jsx'
 import { flowerUrl } from './flowers.js'
-import Ambient from './Ambient.jsx'
+import Ambient, { burstAt, heartBurst } from './Ambient.jsx'
 import Fireworks from './Fireworks.jsx'
 import { drawAvatarInked } from '../game/avatar.js'
 import './love.css'
@@ -12,7 +12,7 @@ const fade = { initial: { opacity: 0, y: 22, filter: 'blur(10px)' }, animate: { 
 
 function Next({ onClick, label = 'Next' }) {
   return (
-    <motion.button className="lp-next" onClick={onClick} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.3 }} aria-label={label}>
+    <motion.button className="lp-next" onClick={(e) => { burstAt(e.currentTarget, 16); onClick(e) }} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.3 }} aria-label={label}>
       <span>{label}</span> <b>→</b>
     </motion.button>
   )
@@ -42,7 +42,7 @@ function Passcode({ code, hint, onOpen }) {
     const next = (val + d).slice(0, code.length)
     setVal(next)
     if (next.length === code.length) {
-      if (next === code) { setOk(true); setTimeout(onOpen, 1900) }
+      if (next === code) { setOk(true); heartBurst(window.innerWidth / 2, window.innerHeight / 2, 60); setTimeout(() => heartBurst(window.innerWidth / 2, window.innerHeight / 2, 40), 450); setTimeout(onOpen, 1900) }
       else setTimeout(() => { setBad((b) => b + 1); setVal('') }, 250)
     }
   }
@@ -70,10 +70,15 @@ function Passcode({ code, hint, onOpen }) {
           <p className="lp-hint">{bad >= 2 ? hint : bad === 1 ? 'Not quite, try again ♥' : ''}</p>
         </div>
       ) : (
-        <motion.div className="lp-wreath" initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1, rotate: 360 }} transition={{ rotate: { repeat: Infinity, duration: 3, ease: 'linear' }, duration: 0.6 }}>
-          {Array.from({ length: 10 }, (_, i) => (
-            <img key={i} src={flowerUrl(i % 2 ? 'rose' : 'anemone', ['#ee8fa6', '#f3f1ec', '#e2876a', '#f29bb5', '#c94f7c'][i % 5], 96)} alt="" style={{ transform: `rotate(${i * 36}deg) translateY(-62px) rotate(${-i * 36}deg)` }} />
-          ))}
+        <motion.div className="lp-unlock" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          <span className="lp-ring r1" /><span className="lp-ring r2" /><span className="lp-ring r3" />
+          <motion.div className="lp-wreath" initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1, rotate: 360 }} transition={{ rotate: { repeat: Infinity, duration: 3, ease: 'linear' }, duration: 0.6 }}>
+            {Array.from({ length: 10 }, (_, i) => (
+              <img key={i} src={flowerUrl(i % 2 ? 'rose' : 'anemone', ['#ee8fa6', '#f3f1ec', '#e2876a', '#f29bb5', '#c94f7c'][i % 5], 96)} alt="" style={{ transform: `rotate(${i * 36}deg) translateY(-62px) rotate(${-i * 36}deg)` }} />
+            ))}
+          </motion.div>
+          <motion.span className="lp-big-heart" initial={{ scale: 0 }} animate={{ scale: [0, 1.25, 1] }} transition={{ duration: 0.8, delay: 0.15 }}>♥</motion.span>
+          <motion.p className="lp-script lp-unlocked" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>Unlocked ♥</motion.p>
         </motion.div>
       )}
     </motion.div>
@@ -237,7 +242,7 @@ function Letter({ lines, signature, onFinish }) {
         <>
           <h2 className="lp-serif">A Letter, Just For You</h2>
           <p className="lp-sub">tap the seal to open</p>
-          <motion.button className="lp-env" onClick={() => setOpen(true)} animate={{ y: [0, -6, 0] }} transition={{ repeat: Infinity, duration: 3 }}>
+          <motion.button className="lp-env" onClick={(e) => { burstAt(e.currentTarget, 40); setOpen(true) }} animate={{ y: [0, -6, 0] }} transition={{ repeat: Infinity, duration: 3 }}>
             <span className="flap" />
             <motion.span className="seal" animate={{ scale: [1, 1.12, 1] }} transition={{ repeat: Infinity, duration: 1.6 }}>♥</motion.span>
           </motion.button>
@@ -289,6 +294,7 @@ export default function LovePage({ story, herLook, onDone }) {
 
   return (
     <div className={`lp lp-${screen}-bg`}>
+      <div className="lp-rays" aria-hidden />
       <Ambient />
       <div className="lp-grain" aria-hidden />
       <div className="lp-vignette" aria-hidden />

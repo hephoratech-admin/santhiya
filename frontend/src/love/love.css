@@ -151,3 +151,34 @@
 .lp-final-bg .lp-script.huge { background-image: linear-gradient(100deg, #ffb3c7 0%, #fff0f3 28%, #ffd9a6 44%, #ff9fb6 60%, #ffb3c7 100%); filter: drop-shadow(0 0 18px rgba(255,120,160,.45)); }
 .lp-final-bg .lp-sub { color: #ffe6ec; opacity: .85; }
 .lp-final-bg .lp-ghost { color: #ffc9d6; }
+
+/* ---------- extra sparkle for the love page ---------- */
+.lp-pops { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 7; pointer-events: none; }
+/* soft light rays turning slowly behind everything */
+.lp-rays { position: absolute; left: 50%; top: 38%; width: 220vmax; height: 220vmax; margin: -110vmax 0 0 -110vmax; z-index: 0; pointer-events: none;
+  background: repeating-conic-gradient(from 0deg, rgba(255,255,255,.22) 0deg 6deg, rgba(255,255,255,0) 6deg 22deg);
+  -webkit-mask-image: radial-gradient(circle, #000 0%, rgba(0,0,0,.5) 18%, transparent 46%); mask-image: radial-gradient(circle, #000 0%, rgba(0,0,0,.5) 18%, transparent 46%);
+  animation: lp-rays 90s linear infinite; mix-blend-mode: soft-light; }
+@keyframes lp-rays { to { transform: rotate(360deg); } }
+.lp-final-bg .lp-rays { background: repeating-conic-gradient(from 0deg, rgba(255,180,210,.10) 0deg 6deg, rgba(255,180,210,0) 6deg 22deg); mix-blend-mode: screen; }
+
+/* passcode: filled dots glow, keys get a soft halo on hover */
+.lp-dots i.on { box-shadow: 0 0 0 4px rgba(232,98,124,.15), 0 0 14px 2px rgba(232,98,124,.55); }
+.lp-keys button { transition: transform .15s, background .2s, box-shadow .25s; }
+.lp-keys button:hover { box-shadow: 0 0 0 4px rgba(244,160,185,.25), 0 10px 22px -10px rgba(196,86,111,.55); }
+
+/* unlocked: wreath + pulsing rings + a big glowing heart */
+.lp-unlock { position: relative; width: 240px; height: 240px; display: grid; place-items: center; }
+.lp-unlock .lp-wreath { position: absolute; left: 25px; top: 25px; }
+.lp-big-heart { position: relative; z-index: 2; font-size: 64px; line-height: 1; color: #e8627c; text-shadow: 0 0 22px rgba(255,120,160,.8), 0 0 46px rgba(255,150,180,.6); }
+.lp-unlocked { position: absolute; bottom: -2.6rem; font-size: 2rem; white-space: nowrap; }
+.lp-ring { position: absolute; left: 50%; top: 50%; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; border: 2px solid rgba(232,98,124,.55);
+  animation: lp-ring 1.8s ease-out infinite; }
+.lp-ring.r2 { animation-delay: .6s; } .lp-ring.r3 { animation-delay: 1.2s; }
+@keyframes lp-ring { from { transform: scale(.4); opacity: 1; } to { transform: scale(2.4); opacity: 0; } }
+
+/* next buttons and the letter's button glow gently */
+.lp-next:not(.solid) { box-shadow: 0 8px 24px -10px rgba(196,86,111,.55), 0 0 0 0 rgba(232,98,124,.35); animation: lp-glow 2.4s ease-in-out infinite; }
+@keyframes lp-glow { 50% { box-shadow: 0 8px 24px -10px rgba(196,86,111,.55), 0 0 0 8px rgba(232,98,124,0), 0 0 22px 4px rgba(255,170,195,.55); } }
+
+@media (prefers-reduced-motion: reduce) { .lp-rays, .lp-ring, .lp-next:not(.solid) { animation: none; } }
