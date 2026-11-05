@@ -3,8 +3,10 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { SHOW } from '../town3d/birthday.js'
 
 // Words on screen while the town sings, then a birthday card once the candles are out.
-export default function BirthdayShow({ name, message, from, onClose }) {
+export default function BirthdayShow({ name, message, from, onClose, onMute }) {
   const [e, setE] = useState(0)
+  const [muted, setMuted] = useState(false)
+  const toggleMute = () => { const m = !muted; setMuted(m); onMute?.(m) }
   useEffect(() => {
     const t0 = performance.now()
     const id = setInterval(() => setE((performance.now() - t0) / 1000), 100)
@@ -18,6 +20,7 @@ export default function BirthdayShow({ name, message, from, onClose }) {
   return (
     <motion.div className="bd-show" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <div className="bd-bars top" /><div className="bd-bars bottom" />
+      <button className="bd-mute" onClick={toggleMute} aria-label={muted ? 'Turn music on' : 'Turn music off'}>{muted ? '🔇' : '🔊'}</button>
       <AnimatePresence>
         {line >= 0 && (
           <motion.p key={line} className="bd-line" initial={{ opacity: 0, y: 16, scale: 0.92 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.5 }}>

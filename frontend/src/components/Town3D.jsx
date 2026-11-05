@@ -5,12 +5,14 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { BUILDINGS, COLS, ROWS, T, TS } from '../game/layout.js'
 import { buildTown3D, X, Z, toPx } from '../town3d/scene.js'
 import { makeChibi } from '../town3d/chibi.js'
 import { glowMats } from '../town3d/buildings.js'
 import { SHOW, buildBirthday, isBirthday } from '../town3d/birthday.js'
 import BirthdayShow from './BirthdayShow.jsx'
+import { createBirthdayMusic } from '../town3d/birthdayMusic.js'
 import PlaceModal from './PlaceModal.jsx'
 import Arcade from './Arcade.jsx'
 
@@ -110,6 +112,7 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
     const s = g.current
     s.open = null; s.show = null
     s.party?.reset()
+    s.music?.stop(); s.music = null
     setShow(0)
   }, [])
   const goParty = useCallback(() => {
@@ -150,6 +153,11 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
     const names = Object.fromEntries(story.places.map((p) => [p.id, p.name.replace('Sri Ramakrishna College of Arts and Science', 'Sri Ramakrishna College')]))
     const W3 = buildTown3D(layout, { mobile, names })
     const scene = W3.scene
+    // soft studio-style reflections and bounce light so materials look more real
+    const pmrem = new THREE.PMREMGenerator(renderer)
+    const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+    pmrem.dispose()
+    scene.environment = envTex
     const party = bday ? buildBirthday(scene, layout, { mobile, name: story.name }) : null
     s.party = party
     const free = (x, y) => layout.free(x, y) && !(party && party.blocks(x, y))
@@ -197,6 +205,9 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
       s.p.face = Math.atan2(c.x - s.p.x, c.y - s.p.y)
       s.show = { t0: performance.now() / 1000, yaw: s.cam.yaw }
       party.start(s.show.t0)
+      // the song (started inside the tap / key press, so browsers allow sound)
+      s.music?.stop()
+      try { s.music = createBirthdayMusic(); s.music.play(); s.music.blow(SHOW.blow) } catch { s.music = null }
       setShow(Date.now())
     }
 
@@ -321,6 +332,7 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
       her.group.position.set(X(p.x), p.yy, Z(p.y))
       her.group.rotation.y = p.face
       her.animate(dt, p.moving, t)
+      if (p.moving > 0.8 && len > 0) W3.puff(her.group.position.x, her.group.position.z, t)
 
       // he follows her footsteps
       const q = s.partner
@@ -376,7 +388,8 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
       W3.sun.intensity = elev > -0.05 ? 2.3 * clamp(elev * 4, 0.15, 1) : 0.45
       mix3(SKY.hemiSky, s.dusk, s.night, W3.hemi.color)
       mix3(SKY.hemiGround, s.dusk, s.night, W3.hemi.groundColor)
-      W3.hemi.intensity = lerp(1.0, 0.35, s.night)
+      W3.hemi.intensity = lerp(0.88, 0.33, s.night)
+      scene.environmentIntensity = lerp(0.16, 0.04, s.night)
       mix3(SKY.fog, s.dusk, s.night, scene.fog.color)
       scene.fog.near = s.map ? 400 : 70; scene.fog.far = s.map ? 900 : 260
       W3.stars.material.opacity = s.night
@@ -475,6 +488,7 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
       ro.disconnect()
       clearTimeout(s.toastT)
       clearTimeout(s.toastT0)
+      s.music?.stop(); s.music = null
       window.removeEventListener('keydown', onDown)
       window.removeEventListener('keyup', onUp)
       scene.traverse((o) => {
@@ -483,6 +497,7 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
         ms.forEach((mm) => { Object.values(mm).forEach((v) => v?.isTexture && v.dispose()); if (mm !== glowMats.window && mm !== glowMats.bulb) mm.dispose() })
       })
       composer.dispose()
+      envTex.dispose()
       renderer.dispose()
       el.removeChild(renderer.domElement)
     }
@@ -554,7 +569,7 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
       )}
 
       <AnimatePresence>
-        {show > 0 && <BirthdayShow key={show} name={story.name} message={story.birthdayMessage} from={story.from} onClose={endShow} />}
+        {show > 0 && <BirthdayShow key={show} name={story.name} message={story.birthdayMessage} from={story.from} onClose={endShow} onMute={(m) => g.current.music?.setMuted(m)} />}
       </AnimatePresence>
 
       <AnimatePresence>

@@ -4,6 +4,7 @@ import { Sky } from 'three/addons/objects/Sky.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { BUILDINGS, COLS, ROWS, T, TS } from '../game/layout.js'
 import { makeBuilding, glowMats, heartShape } from './buildings.js'
+import { buildNature, windify } from './nature.js'
 
 export const X = (px) => px / 16 - COLS
 export const Z = (py) => py / 16 - ROWS
@@ -224,7 +225,7 @@ export function buildTown3D(layout, { mobile = false, names = {} } = {}) {
   const trunks = new THREE.InstancedMesh(trunkGeo, new THREE.MeshStandardMaterial({ color: '#86593f', roughness: 0.9 }), trees.length)
   const pinkT = trees.filter((t) => t.pink), greenT = trees.filter((t) => !t.pink)
   const canopy = (list, color) => {
-    const m = new THREE.InstancedMesh(canopyGeo, new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.8, flatShading: true }), list.length)
+    const m = new THREE.InstancedMesh(canopyGeo, windify(new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.8, flatShading: true }), { amp: 0.14, height: 3.6, speed: 1.1 }), list.length)
     const base = new THREE.Color(color)
     list.forEach((t, i) => {
       m.setColorAt(i, base.clone().offsetHSL((rand() - 0.5) * 0.04, (rand() - 0.5) * 0.1, (rand() - 0.5) * 0.08))
@@ -242,9 +243,9 @@ export function buildTown3D(layout, { mobile = false, names = {} } = {}) {
   // ---- flowers + grass tufts ----
   const fl = layout.flowers
   const petalGeo = mergeGeometries([...Array(5)].map((_, i) => { const a = (i / 5) * Math.PI * 2; const p = new THREE.SphereGeometry(0.075, 8, 6); p.scale(1, 0.3, 0.62); p.rotateY(-a); p.translate(Math.cos(a) * 0.085, 0, Math.sin(a) * 0.085); return p }).concat([new THREE.SphereGeometry(0.045, 8, 6)]))
-  const flowerM = new THREE.InstancedMesh(petalGeo, new THREE.MeshStandardMaterial({ color: '#fff', roughness: 0.55 }), fl.length)
+  const flowerM = new THREE.InstancedMesh(petalGeo, windify(new THREE.MeshStandardMaterial({ color: '#fff', roughness: 0.55 }), { amp: 0.05, uniform: true, speed: 2.1 }), fl.length)
   const stemGeo = new THREE.CylinderGeometry(0.012, 0.014, 0.3, 4); stemGeo.translate(0, 0.15, 0)
-  const stems = new THREE.InstancedMesh(stemGeo, new THREE.MeshStandardMaterial({ color: '#5d9b4c', roughness: 1 }), fl.length)
+  const stems = new THREE.InstancedMesh(stemGeo, windify(new THREE.MeshStandardMaterial({ color: '#5d9b4c', roughness: 1 }), { amp: 0.05, height: 0.3, speed: 2.1 }), fl.length)
   const fcols = ['#f490a8', '#ffffff', '#ffe27a', '#d9b8f4', '#ff9a7a'].map((c) => new THREE.Color(c))
   fl.forEach((f, i) => {
     const sc = 0.9 + rand() * 0.7
@@ -256,7 +257,7 @@ export function buildTown3D(layout, { mobile = false, names = {} } = {}) {
   const tufts = []
   for (let r = 0; r < ROWS; r++) for (let q = 0; q < COLS; q++) if (layout.grid[r][q] === T.GRASS && !layout.solid[r][q]) for (let k = 0; k < (mobile ? 2 : 4); k++) tufts.push([(q + rand()) * 2 - COLS, (r + rand()) * 2 - ROWS])
   const tuftGeo = new THREE.ConeGeometry(0.06, 0.34, 3); tuftGeo.translate(0, 0.17, 0)
-  const tuftM = new THREE.InstancedMesh(tuftGeo, new THREE.MeshStandardMaterial({ color: '#6fae5c', roughness: 1 }), tufts.length)
+  const tuftM = new THREE.InstancedMesh(tuftGeo, windify(new THREE.MeshStandardMaterial({ color: '#6fae5c', roughness: 1 }), { amp: 0.07, height: 0.34, speed: 2.4 }), tufts.length)
   tufts.forEach(([x, z], i) => { dummy.position.set(x, 0, z); dummy.rotation.set((rand() - 0.5) * 0.4, rand() * 6, (rand() - 0.5) * 0.4); dummy.scale.set(1, 0.7 + rand() * 0.8, 1); dummy.updateMatrix(); tuftM.setMatrixAt(i, dummy.matrix) })
   scene.add(tuftM)
 
@@ -384,9 +385,13 @@ export function buildTown3D(layout, { mobile = false, names = {} } = {}) {
     return l
   })
 
+  // ---- clouds, birds, butterflies, dust ----
+  const nature = buildNature(scene, { mobile })
+
   // ---- per-frame animation of the world itself ----
   const update = (t, dt, center, night = 0, dusk = 0) => {
     const glow = Math.max(night, dusk * 0.6)
+    nature.update(t, dt, center, night, dusk)
     haloMat.opacity = night * 0.85
     ffMat.opacity = glow * 0.95
     lanternMat.opacity = 0.25 + glow * 0.75
@@ -433,5 +438,5 @@ export function buildTown3D(layout, { mobile = false, names = {} } = {}) {
     q.needsUpdate = true
   }
 
-  return { scene, sky, stars, sun, hemi, pool, lightSpots, labels, rings, hearts, update, bridgeRows: [22, 23, 36, 37] }
+  return { scene, sky, stars, sun, hemi, pool, lightSpots, labels, rings, hearts, update, puff: nature.puff, bridgeRows: [22, 23, 36, 37] }
 }
