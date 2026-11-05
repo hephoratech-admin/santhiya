@@ -1,6 +1,7 @@
 // Round 3D chibi built from simple shapes, so any look from the avatar creator works.
 // About 1.25 m tall, facing +z. animate() swings arms and legs while walking.
 import * as THREE from 'three'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
 const mat = (color, roughness = 0.7) => new THREE.MeshStandardMaterial({ color, roughness })
 
@@ -81,10 +82,31 @@ export function makeChibi(look) {
     add(head, new THREE.BoxGeometry(0.1, 0.022, 0.02), hair, 0, -0.075, 0.232)
   }
 
+  // Head details move together; preserve the two independently blinking eyes.
+  const bakedMaterials = new Set(), buckets = new Map()
+  for (const o of [...head.children]) {
+    if (!o.isMesh || eyes.includes(o) || o.material.transparent) continue
+    const basic = o.material.isMeshBasicMaterial, key = basic ? 'basic' : 'lit'
+    if (!buckets.has(key)) buckets.set(key, [])
+    o.updateMatrix()
+    const geo = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone()
+    geo.applyMatrix4(o.matrix)
+    const colors = new Float32Array(geo.attributes.position.count * 3), c = o.material.color
+    for (let i = 0; i < colors.length; i += 3) { colors[i] = c.r; colors[i + 1] = c.g; colors[i + 2] = c.b }
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+    buckets.get(key).push(geo); bakedMaterials.add(o.material)
+    o.removeFromParent(); o.geometry.dispose()
+  }
+  for (const [key, geos] of buckets) {
+    const m = key === 'basic' ? new THREE.MeshBasicMaterial({ vertexColors: true }) : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .6 })
+    const mesh = new THREE.Mesh(mergeGeometries(geos), m); mesh.castShadow = key !== 'basic'; head.add(mesh)
+    geos.forEach(geo => geo.dispose())
+  }
   let phase = 0
   let nextBlink = 1 + Math.random() * 3, blinkT = -1
   return {
     group: g,
+    dispose() { bakedMaterials.forEach(m => m.dispose()) },
     head,
     body,
     /** speed: 0 idle … 1 walking … ~1.7 running */

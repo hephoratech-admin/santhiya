@@ -1,6 +1,7 @@
 // Little touches of life for the 3D town: wind in the grass and trees, drifting clouds,
 // birds, butterflies and dust puffs under her feet.
 import * as THREE from 'three'
+import { batchAnimated } from './batching.js'
 
 export const wind = { value: 0 } // shared time uniform for all swaying materials
 
@@ -43,22 +44,23 @@ export function buildNature(scene, { mobile = false } = {}) {
 
   // ---- puffy low-poly clouds ----
   const cloudMat = new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: '#ffffff', emissiveIntensity: 0.4, roughness: 1, flatShading: true, fog: false, transparent: true, opacity: 0.96 })
-  const clouds = []
+  const clouds = [], animatedRoots = []
+  const cloudGeo = new THREE.IcosahedronGeometry(1, 1)
   const NC = mobile ? 9 : 16
   for (let i = 0; i < NC; i++) {
     const g = new THREE.Group()
     const n = 5 + ((rand() * 4) | 0)
     for (let k = 0; k < n; k++) {
       const r = 4 + rand() * 5
-      const m = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), cloudMat)
+      const m = new THREE.Mesh(cloudGeo, cloudMat)
       m.position.set((k - n / 2) * 4.2 + rand() * 2, rand() * 2.5 - (Math.abs(k - n / 2) * 0.6), rand() * 4 - 2)
-      m.scale.y = 0.62
+      m.scale.set(r, r * .62, r)
       g.add(m)
     }
     g.position.set((rand() - 0.5) * 520, 55 + rand() * 35, (rand() - 0.5) * 520)
     g.rotation.y = rand() * 6
     g.scale.setScalar(0.9 + rand() * 0.9)
-    scene.add(g)
+    animatedRoots.push(g)
     clouds.push({ g, v: 1.2 + rand() * 1.4 })
   }
 
@@ -79,7 +81,7 @@ export function buildNature(scene, { mobile = false } = {}) {
       wr.scale.x = -1
       b.add(wl, wr)
       b.scale.setScalar(1.3)
-      scene.add(b)
+      animatedRoots.push(b)
       // V formation offsets
       const side = i % 2 ? 1 : -1, row = Math.ceil(i / 2)
       birds.push({ b, wl, wr, off: new THREE.Vector3(side * row * 1.6, (rand() - 0.5) * 0.8, -row * 1.8), ph: rand() * 6 })
@@ -99,7 +101,7 @@ export function buildNature(scene, { mobile = false } = {}) {
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace
     return t
   }
-  const bfMats = ['#ffb3c7', '#ffd166', '#a8d8ff', '#c9a8e8', '#ffffff'].map((c) => new THREE.MeshBasicMaterial({ map: bfTex(c), transparent: true, alphaTest: 0.3, side: THREE.DoubleSide }))
+  const bfMats = ['#ffb3c7', '#ffd166', '#a8d8ff', '#c9a8e8', '#ffffff'].map((c) => new THREE.MeshBasicMaterial({ map: bfTex(c), transparent: false, alphaTest: 0.3, side: THREE.DoubleSide }))
   const bfWing = new THREE.PlaneGeometry(0.32, 0.32); bfWing.translate(0.16, 0, 0); bfWing.rotateX(-Math.PI / 2)
   const butterflies = []
   for (let i = 0; i < (mobile ? 8 : 16); i++) {
@@ -108,7 +110,7 @@ export function buildNature(scene, { mobile = false } = {}) {
     const wl = new THREE.Mesh(bfWing, m), wr = new THREE.Mesh(bfWing, m)
     wr.scale.x = -1
     b.add(wl, wr)
-    scene.add(b)
+    animatedRoots.push(b)
     butterflies.push({ b, wl, wr, home: new THREE.Vector3((rand() - 0.5) * 40, 0, (rand() - 0.5) * 40), ph: rand() * 6, sp: 0.5 + rand() * 0.6 })
   }
 
@@ -131,14 +133,16 @@ export function buildNature(scene, { mobile = false } = {}) {
     p.s.position.set(x + (Math.random() - 0.5) * 0.3, 0.12, z + (Math.random() - 0.5) * 0.3)
   }
 
-  const tmp = new THREE.Vector3()
-  const update = (t, dt, center, night, dusk) => {
+  const updateBatches = batchAnimated(scene, animatedRoots)
+  const tmp = new THREE.Vector3(), duskColor = new THREE.Color('#ffc9a8'), nightColor = new THREE.Color('#2c3360')
+  const update = (t, dt, center, night, dusk, map = false) => {
     wind.value = t
     const day = 1 - night
     // clouds drift and wrap around; they get dim and blue at night, warm at dusk
-    cloudMat.color.setRGB(1, 1, 1).lerp(new THREE.Color('#ffc9a8'), dusk * 0.6 * day).lerp(new THREE.Color('#2c3360'), night * 0.85)
+    cloudMat.color.setRGB(1, 1, 1).lerp(duskColor, dusk * 0.6 * day).lerp(nightColor, night * 0.85)
     cloudMat.emissive.copy(cloudMat.color); cloudMat.emissiveIntensity = 0.4 * day
     for (const c of clouds) {
+      c.g.visible = !map
       c.g.position.x += c.v * dt
       if (c.g.position.x > 300) c.g.position.x = -300
     }
@@ -168,6 +172,7 @@ export function buildNature(scene, { mobile = false } = {}) {
       const flap = Math.sin(t * 18 + b.ph) * 1.1
       b.wl.rotation.z = flap; b.wr.rotation.z = -flap
     }
+    updateBatches()
     for (const p of puffs) {
       if (p.life <= 0) continue
       p.life -= dt * 1.6

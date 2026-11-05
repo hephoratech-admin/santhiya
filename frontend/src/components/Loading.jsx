@@ -87,7 +87,10 @@ export default function Loading({ story, onReady }) {
         },
         onTerrain: (s) => { snap.current = s; if (mini.current) drawMini(mini.current, s, false) },
       })
-      await sleep(700)
+      if (alive) setProg({ p: 0.94, label: 'Growing leaves and shaping the ground' })
+      await import('./Town3D.jsx')
+      if (alive) setProg({ p: 1, label: 'Your town is ready' })
+      await sleep(200)
       if (alive) onReady(world)
     })()
     const t = setInterval(() => setTip((n) => (n + 1) % TIPS.length), 2600)

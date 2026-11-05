@@ -5,6 +5,9 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { BUILDINGS, COLS, ROWS, T, TS } from '../game/layout.js'
 import { makeBuilding, glowMats, heartShape } from './buildings.js'
 import { buildNature, windify } from './nature.js'
+import { batchArchitecture, batchAnimated, batchBillboards } from './batching.js'
+import { buildTerrain, enhanceWater } from './terrain.js'
+import { buildVegetation } from './vegetation.js'
 
 export const X = (px) => px / 16 - COLS
 export const Z = (py) => py / 16 - ROWS
@@ -14,65 +17,6 @@ const W_M = COLS * 2, H_M = ROWS * 2
 function rng(seed) {
   let s = seed
   return () => { s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296 }
-}
-
-// ---------- ground texture painted from the grid (water tiles are cut out) ----------
-function groundTexture(layout, mobile) {
-  const P = mobile ? 24 : 32 // pixels per tile
-  const c = document.createElement('canvas')
-  c.width = COLS * P; c.height = ROWS * P
-  const g = c.getContext('2d')
-  const rand = rng(11)
-  const { grid } = layout
-  const at = (cc, rr) => (cc < 0 || rr < 0 || cc >= COLS || rr >= ROWS ? T.GRASS : grid[rr][cc])
-  g.fillStyle = '#9fcf84'
-  g.fillRect(0, 0, c.width, c.height)
-  for (let i = 0; i < 2600; i++) {
-    g.fillStyle = ['rgba(120,180,90,.18)', 'rgba(190,220,130,.16)', 'rgba(90,150,90,.12)', 'rgba(220,235,160,.12)'][i % 4]
-    g.beginPath(); g.arc(rand() * c.width, rand() * c.height, P * (0.4 + rand() * 1.8), 0, 7); g.fill()
-  }
-  for (let r = 0; r < ROWS; r++) for (let q = 0; q < COLS; q++) {
-    const t = grid[r][q], x = q * P, y = r * P
-    if (t === T.GRASS) {
-      if (layout.forest[r][q]) { g.fillStyle = 'rgba(60,110,60,.22)'; g.beginPath(); g.arc(x + P / 2, y + P / 2, P * 0.9, 0, 7); g.fill() }
-      const nearWater = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => at(q + dx, r + dy) === T.WATER)
-      if (nearWater) { g.fillStyle = 'rgba(214,196,150,.85)'; g.fillRect(x, y, P, P) }
-      continue
-    }
-    if (t === T.WATER || t === T.BRIDGE) continue
-    const base = t === T.PLAZA ? '#efd7cc' : '#ead6b8'
-    g.fillStyle = base; g.fillRect(x - 0.5, y - 0.5, P + 1, P + 1)
-    // cobbles
-    const n = 3
-    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
-      const v = rand()
-      g.fillStyle = t === T.PLAZA ? (v < 0.5 ? '#e7c8bd' : '#f3ded4') : (v < 0.5 ? '#dfc8a6' : '#f1e1c6')
-      g.beginPath(); g.roundRect(x + (i * P) / n + 1.2, y + (j * P) / n + 1.2, P / n - 2.4, P / n - 2.4, P / 14); g.fill()
-    }
-    // soft kerb where the path meets grass
-    g.fillStyle = 'rgba(120,96,70,.28)'
-    if (at(q, r - 1) === T.GRASS) g.fillRect(x, y, P, P * 0.07)
-    if (at(q, r + 1) === T.GRASS) g.fillRect(x, y + P * 0.93, P, P * 0.07)
-    if (at(q - 1, r) === T.GRASS) g.fillRect(x, y, P * 0.07, P)
-    if (at(q + 1, r) === T.GRASS) g.fillRect(x + P * 0.93, y, P * 0.07, P)
-  }
-  // cut the water out with overlapping circles so river banks and the lake shore are rounded
-  g.globalCompositeOperation = 'destination-out'
-  g.fillStyle = '#000'
-  for (let r = 0; r < ROWS; r++) for (let q = 0; q < COLS; q++) {
-    const t = grid[r][q]
-    if (t !== T.WATER && t !== T.BRIDGE) continue
-    g.beginPath(); g.arc(q * P + P / 2, r * P + P / 2, P * 0.78, 0, 7); g.fill()
-  }
-  g.globalCompositeOperation = 'source-over'
-  // a heart mosaic in the plaza
-  g.fillStyle = 'rgba(232,98,124,.55)'
-  g.font = `${P * 2.2}px serif`; g.textAlign = 'center'; g.textBaseline = 'middle'
-  g.fillText('♥', 35.5 * P + P / 2, 26 * P)
-  const tex = new THREE.CanvasTexture(c)
-  tex.colorSpace = THREE.SRGBColorSpace
-  tex.anisotropy = 8
-  return tex
 }
 
 function waterNormals() {
@@ -176,11 +120,11 @@ export function buildTown3D(layout, { mobile = false, names = {} } = {}) {
   sun.castShadow = true
   sun.shadow.mapSize.set(mobile ? 1024 : 2048, mobile ? 1024 : 2048)
   const sc = sun.shadow.camera
-  sc.left = -38; sc.right = 38; sc.top = 38; sc.bottom = -38; sc.near = 1; sc.far = 160
+  sc.left = -30; sc.right = 30; sc.top = 30; sc.bottom = -30; sc.near = 1; sc.far = 160
   sun.shadow.bias = -0.0004
   sun.shadow.normalBias = 0.03
   scene.add(sun, sun.target)
-  const pool = Array.from({ length: mobile ? 4 : 7 }, () => { const l = new THREE.PointLight('#ffcf8a', 0, 15, 1.6); scene.add(l); return l })
+  const pool = Array.from({ length: 4 }, () => { const l = new THREE.PointLight('#ffcf8a', 0, 15, 1.6); scene.add(l); return l })
 
   // ---- ground + water + outer meadow ----
   const meadow = new THREE.Mesh(new THREE.PlaneGeometry(1400, 1400), new THREE.MeshStandardMaterial({ color: '#8fbf74', roughness: 1 }))
@@ -190,9 +134,12 @@ export function buildTown3D(layout, { mobile = false, names = {} } = {}) {
   const water = new THREE.Mesh(new THREE.PlaneGeometry(W_M, H_M), new THREE.MeshStandardMaterial({ color: '#3a8fbf', roughness: 0.12, metalness: 0.05, normalMap: wn, normalScale: new THREE.Vector2(0.45, 0.45) }))
   water.rotation.x = -Math.PI / 2; water.position.y = -0.12; water.receiveShadow = true
   scene.add(water)
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(W_M, H_M), new THREE.MeshStandardMaterial({ map: groundTexture(layout, mobile), alphaTest: 0.5, roughness: 0.95 }))
-  ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true
-  scene.add(ground)
+  const terrain = buildTerrain(scene, layout, mobile)
+  const waterTime = enhanceWater(water.material, terrain.mask)
+
+  // Preserve the plaza's romantic heart mosaic as a flat, batched inlay.
+  const mosaic = new THREE.Mesh(new THREE.ShapeGeometry(heartShape(2.5)), new THREE.MeshStandardMaterial({ color: '#df8b9e', roughness: .98 }))
+  mosaic.rotation.x = -Math.PI / 2; mosaic.position.set(0, .012, 4); mosaic.receiveShadow = true; scene.add(mosaic)
 
   // ---- buildings, door rings, labels ----
   const labels = []
@@ -209,40 +156,21 @@ export function buildTown3D(layout, { mobile = false, names = {} } = {}) {
     scene.add(lab)
     labels.push({ id: b.id, sprite: lab })
   }
+  const ringGeo = new THREE.TorusGeometry(0.85, 0.07, 8, 40)
   for (const p of layout.places) {
-    const r = new THREE.Mesh(new THREE.TorusGeometry(0.85, 0.07, 8, 40), ringMat)
+    const r = new THREE.Mesh(ringGeo, ringMat)
     r.rotation.x = -Math.PI / 2
     r.position.set(X(p.x), 0.06, Z(p.y))
     scene.add(r)
     rings.push({ id: p.id, mesh: r })
   }
 
-  // ---- trees (instanced): trunk + clustered canopy ----
-  const trunkGeo = new THREE.CylinderGeometry(0.13, 0.2, 1.7, 7); trunkGeo.translate(0, 0.85, 0)
-  const blobs = [[0, 2.4, 0, 1.15], [0.65, 2.05, 0.2, 0.8], [-0.6, 2.1, -0.15, 0.85], [0.1, 2.95, -0.2, 0.75], [-0.15, 2.0, 0.6, 0.7]]
-  const canopyGeo = mergeGeometries(blobs.map(([x, y, z, r]) => { const s = new THREE.IcosahedronGeometry(r, 1); s.translate(x, y, z); return s }))
-  const trees = layout.trees
-  const trunks = new THREE.InstancedMesh(trunkGeo, new THREE.MeshStandardMaterial({ color: '#86593f', roughness: 0.9 }), trees.length)
-  const pinkT = trees.filter((t) => t.pink), greenT = trees.filter((t) => !t.pink)
-  const canopy = (list, color) => {
-    const m = new THREE.InstancedMesh(canopyGeo, windify(new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.8, flatShading: true }), { amp: 0.14, height: 3.6, speed: 1.1 }), list.length)
-    const base = new THREE.Color(color)
-    list.forEach((t, i) => {
-      m.setColorAt(i, base.clone().offsetHSL((rand() - 0.5) * 0.04, (rand() - 0.5) * 0.1, (rand() - 0.5) * 0.08))
-    })
-    return m
-  }
-  const pinkM = canopy(pinkT, '#f4a9c0'), greenM = canopy(greenT, '#7fbf78')
+  const vegetation = buildVegetation(scene, layout, mobile)
   const dummy = new THREE.Object3D()
-  const place = (t) => { dummy.position.set(X((t.c + 0.5 + t.jx * 0.3) * TS), 0, Z((t.r + 0.5 + t.jy * 0.3) * TS)); dummy.rotation.set(0, t.rot, 0); dummy.scale.setScalar(t.s * 1.25); dummy.updateMatrix() }
-  trees.forEach((t, i) => { place(t); trunks.setMatrixAt(i, dummy.matrix) })
-  pinkT.forEach((t, i) => { place(t); pinkM.setMatrixAt(i, dummy.matrix) })
-  greenT.forEach((t, i) => { place(t); greenM.setMatrixAt(i, dummy.matrix) })
-  for (const m of [trunks, pinkM, greenM]) { m.castShadow = true; m.receiveShadow = true; scene.add(m) }
 
   // ---- flowers + grass tufts ----
   const fl = layout.flowers
-  const petalGeo = mergeGeometries([...Array(5)].map((_, i) => { const a = (i / 5) * Math.PI * 2; const p = new THREE.SphereGeometry(0.075, 8, 6); p.scale(1, 0.3, 0.62); p.rotateY(-a); p.translate(Math.cos(a) * 0.085, 0, Math.sin(a) * 0.085); return p }).concat([new THREE.SphereGeometry(0.045, 8, 6)]))
+  const petalGeo = mergeGeometries([...Array(5)].map((_, i) => { const a = (i / 5) * Math.PI * 2; const p = new THREE.CircleGeometry(0.075, 5); p.rotateX(-Math.PI / 2); p.scale(1, 0.3, 0.62); p.rotateY(-a); p.translate(Math.cos(a) * 0.085, 0, Math.sin(a) * 0.085); const out = p.toNonIndexed(); p.dispose(); return out }).concat([new THREE.IcosahedronGeometry(0.045, 0)]))
   const flowerM = new THREE.InstancedMesh(petalGeo, windify(new THREE.MeshStandardMaterial({ color: '#fff', roughness: 0.55 }), { amp: 0.05, uniform: true, speed: 2.1 }), fl.length)
   const stemGeo = new THREE.CylinderGeometry(0.012, 0.014, 0.3, 4); stemGeo.translate(0, 0.15, 0)
   const stems = new THREE.InstancedMesh(stemGeo, windify(new THREE.MeshStandardMaterial({ color: '#5d9b4c', roughness: 1 }), { amp: 0.05, height: 0.3, speed: 2.1 }), fl.length)
@@ -254,13 +182,6 @@ export function buildTown3D(layout, { mobile = false, names = {} } = {}) {
     flowerM.setMatrixAt(i, dummy.matrix); flowerM.setColorAt(i, fcols[f.k])
   })
   scene.add(flowerM, stems)
-  const tufts = []
-  for (let r = 0; r < ROWS; r++) for (let q = 0; q < COLS; q++) if (layout.grid[r][q] === T.GRASS && !layout.solid[r][q]) for (let k = 0; k < (mobile ? 2 : 4); k++) tufts.push([(q + rand()) * 2 - COLS, (r + rand()) * 2 - ROWS])
-  const tuftGeo = new THREE.ConeGeometry(0.06, 0.34, 3); tuftGeo.translate(0, 0.17, 0)
-  const tuftM = new THREE.InstancedMesh(tuftGeo, windify(new THREE.MeshStandardMaterial({ color: '#6fae5c', roughness: 1 }), { amp: 0.07, height: 0.34, speed: 2.4 }), tufts.length)
-  tufts.forEach(([x, z], i) => { dummy.position.set(x, 0, z); dummy.rotation.set((rand() - 0.5) * 0.4, rand() * 6, (rand() - 0.5) * 0.4); dummy.scale.set(1, 0.7 + rand() * 0.8, 1); dummy.updateMatrix(); tuftM.setMatrixAt(i, dummy.matrix) })
-  scene.add(tuftM)
-
   // ---- street lamps ----
   const poleGeo = new THREE.CylinderGeometry(0.07, 0.1, 3.4, 8); poleGeo.translate(0, 1.7, 0)
   const poles = new THREE.InstancedMesh(poleGeo, new THREE.MeshStandardMaterial({ color: '#4d3a44', roughness: 0.4, metalness: 0.5 }), layout.lamps.length)
@@ -275,8 +196,10 @@ export function buildTown3D(layout, { mobile = false, names = {} } = {}) {
   // warm halos around each lamp head that fade in at night
   const glowTex = glowTexture()
   const haloMat = new THREE.SpriteMaterial({ map: glowTex, color: '#ffc37a', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })
+  const lampHalos = []
   for (const p of lampPos) {
     const h = new THREE.Sprite(haloMat)
+    lampHalos.push(h)
     h.position.copy(p); h.scale.setScalar(2.6)
     scene.add(h)
   }
@@ -386,13 +309,24 @@ export function buildTown3D(layout, { mobile = false, names = {} } = {}) {
   })
 
   // ---- clouds, birds, butterflies, dust ----
+  const excluded = new Set([meadow, water, ...rings.map(r => r.mesh), ...hearts.map(h => h.mesh)])
+  excluded.window = glowMats.window; excluded.bulb = glowMats.bulb
+  // Terrain and leaf shader materials must retain their custom programs.
+  scene.traverse(o => { if (o.material?.onBeforeCompile && o.material.onBeforeCompile !== THREE.Material.prototype.onBeforeCompile) excluded.add(o) })
+  const disposeBatches = batchArchitecture(scene, excluded)
+  const icons = [...rings.map(r => r.mesh), ...hearts.map(h => h.mesh)]
+  icons.forEach(mesh => scene.remove(mesh))
+  const updateIcons = batchAnimated(scene, icons)
+  const haloBatch = batchBillboards(scene, lampHalos)
+  const lanternBatch = batchBillboards(scene, lanterns.map(l => l.sp))
   const nature = buildNature(scene, { mobile })
 
   // ---- per-frame animation of the world itself ----
-  const update = (t, dt, center, night = 0, dusk = 0) => {
+  const update = (t, dt, center, night = 0, dusk = 0, map = false) => {
     const glow = Math.max(night, dusk * 0.6)
-    nature.update(t, dt, center, night, dusk)
+    nature.update(t, dt, center, night, dusk, map)
     haloMat.opacity = night * 0.85
+    for (const h of lampHalos) h.visible = night > .01
     ffMat.opacity = glow * 0.95
     lanternMat.opacity = 0.25 + glow * 0.75
     if (ffMat.opacity > 0.01) {
@@ -414,6 +348,7 @@ export function buildTown3D(layout, { mobile = false, names = {} } = {}) {
       if (l.y > 40) spawnLantern(l, center, false)
       l.sp.position.set(l.x + Math.sin(t * 0.4 + l.ph) * 1.2, l.y, l.z + Math.cos(t * 0.3 + l.ph) * 1.2)
     }
+    waterTime.value = t
     wn.offset.x = t * 0.012; wn.offset.y = t * 0.008
     for (const r of rings) r.mesh.scale.setScalar(1 + Math.sin(t * 3 + r.mesh.position.x) * 0.08)
     for (const h of hearts) {
@@ -421,6 +356,8 @@ export function buildTown3D(layout, { mobile = false, names = {} } = {}) {
       h.mesh.rotation.y = t * 1.6 + h.id
       h.mesh.position.y = 1.1 + Math.sin(t * 2.2 + h.id) * 0.18
     }
+    updateIcons()
+    haloBatch.update(); lanternBatch.update()
     const a = spray.geometry.attributes.position
     sprayP.forEach((s, i) => {
       s.t += dt * s.v
@@ -438,5 +375,5 @@ export function buildTown3D(layout, { mobile = false, names = {} } = {}) {
     q.needsUpdate = true
   }
 
-  return { scene, sky, stars, sun, hemi, pool, lightSpots, labels, rings, hearts, update, puff: nature.puff, bridgeRows: [22, 23, 36, 37] }
+  return { scene, sky, stars, sun, hemi, pool, lightSpots, labels, rings, hearts, update, vegetation, dispose() { vegetation.dispose(); terrain.dispose(); disposeBatches(); haloBatch.dispose(); lanternBatch.dispose() }, puff: nature.puff, bridgeRows: [22, 23, 36, 37] }
 }

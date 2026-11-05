@@ -26,7 +26,7 @@ export default function App() {
   const ready = useCallback((w) => { setWorld(w); setStage('town') }, [])
 
   useEffect(() => {
-    const id = setTimeout(() => { loadTown().catch(() => {}); import('./components/Loading.jsx').catch(() => {}) }, 2500)
+    const id = setTimeout(() => { import('./components/Loading.jsx').catch(() => {}) }, 2500)
     return () => clearTimeout(id)
   }, [])
 

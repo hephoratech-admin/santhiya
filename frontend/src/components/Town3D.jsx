@@ -8,6 +8,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { BUILDINGS, COLS, ROWS, T, TS } from '../game/layout.js'
 import { buildTown3D, X, Z, toPx } from '../town3d/scene.js'
+import { createQuality } from '../town3d/quality.js'
 import { makeChibi } from '../town3d/chibi.js'
 import { glowMats } from '../town3d/buildings.js'
 import { SHOW, buildBirthday, isBirthday } from '../town3d/birthday.js'
@@ -133,9 +134,11 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
     const el = host.current
     const s = g.current
     const mobile = window.matchMedia?.('(pointer: coarse)').matches ?? false
+    const sceneParams = new URLSearchParams(window.location.search)
+    const initialClock = sceneParams.has('fps') ? ({ day: .36, sunset: .74, night: .92 }[sceneParams.get('time')] ?? .36) : .36
     Object.assign(s, {
       keys: new Set(), pad: { f: false, b: false, l: false, r: false }, got: new Set(), open: null, near: null, path: null, target: null,
-      partner: null, trail: [], loveT: 0, clock: 0.36, night: 0, map: false, ptrs: new Map(), stuck: 0,
+      partner: null, trail: Array.from({ length: 400 }, () => ({ x: 0, y: 0 })), trailHead: 0, trailCount: 0, loveT: 0, clock: initialClock, night: 0, map: false, ptrs: new Map(), stuck: 0,
       p: { x: layout.spawn.x, y: layout.spawn.y, face: Math.PI, moving: 0, yy: 0 },
       cam: { yaw: 0, pitch: 0.5, dist: 13, tYaw: 0, tPitch: 0.5, tDist: 13, target: new THREE.Vector3() },
     })
@@ -155,7 +158,10 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
     const scene = W3.scene
     // soft studio-style reflections and bounce light so materials look more real
     const pmrem = new THREE.PMREMGenerator(renderer)
-    const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+    const room = new RoomEnvironment()
+    const envTarget = pmrem.fromScene(room, 0.04)
+    const envTex = envTarget.texture
+    room.dispose()
     pmrem.dispose()
     scene.environment = envTex
     const party = bday ? buildBirthday(scene, layout, { mobile, name: story.name }) : null
@@ -166,17 +172,61 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
     composer.addPass(new RenderPass(scene, camera))
     const bloom = new UnrealBloomPass(new THREE.Vector2(el.clientWidth / (mobile ? 2 : 1), el.clientHeight / (mobile ? 2 : 1)), 0.38, 0.5, 0.88)
     composer.addPass(bloom)
-    composer.addPass(new OutputPass())
+    const output = new OutputPass()
+    composer.addPass(output)
+    const quality = createQuality(mobile, tier => {
+      const dpr = Math.min(window.devicePixelRatio || 1, mobile ? tier.mobileDpr : tier.dpr)
+      renderer.setPixelRatio(dpr)
+      composer.setPixelRatio(dpr)
+      composer.setSize(el.clientWidth, el.clientHeight)
+      bloom.enabled = tier.bloom
+      bloom.setSize(Math.ceil(el.clientWidth * dpr / 2), Math.ceil(el.clientHeight * dpr / 2))
+      const size = mobile ? Math.min(1024, tier.shadow) : tier.shadow
+      if (W3.sun.shadow.mapSize.x !== size) {
+        W3.sun.shadow.mapSize.set(size, size)
+        W3.sun.shadow.map?.dispose(); W3.sun.shadow.map = null
+      }
+    })
+    const fpsEnabled = sceneParams.has('fps')
+    const fpsEl = fpsEnabled ? document.createElement('pre') : null
+    if (fpsEl) {
+      fpsEl.dataset.testid = 'town-fps'
+      fpsEl.style.cssText = 'position:absolute;bottom:80px;left:8px;z-index:30;margin:0;padding:8px;background:#15261ee8;color:#e0ffd3;font:11px monospace;pointer-events:none;border-radius:6px'
+      el.appendChild(fpsEl)
+    }
+    // Two reusable contact shadows follow the avatars, including bridge height.
+    const blobCanvas = document.createElement('canvas'); blobCanvas.width = blobCanvas.height = 64
+    const blobCtx = blobCanvas.getContext('2d'), blobGradient = blobCtx.createRadialGradient(32,32,2,32,32,32)
+    blobGradient.addColorStop(0, 'rgba(30,24,36,.3)'); blobGradient.addColorStop(1, 'rgba(30,24,36,0)')
+    blobCtx.fillStyle = blobGradient; blobCtx.fillRect(0,0,64,64)
+    const blobMat = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(blobCanvas), transparent: true, depthWrite: false })
+    const blobGeo = new THREE.PlaneGeometry(1.3, 1.3)
+    const herBlob = new THREE.Mesh(blobGeo, blobMat), hisBlob = new THREE.Mesh(blobGeo, blobMat)
+    herBlob.rotation.x = hisBlob.rotation.x = -Math.PI / 2; hisBlob.visible = false
+    scene.add(herBlob, hisBlob)
 
     // ---- the two of us ----
     const her = makeChibi(look)
     scene.add(her.group)
+    const proxyGeo = new THREE.CapsuleGeometry(.24, .6, 2, 5)
+    const herMap = new THREE.Mesh(proxyGeo, new THREE.MeshBasicMaterial({ color: look.top }))
+    const hisMap = new THREE.Mesh(proxyGeo, new THREE.MeshBasicMaterial({ color: partner?.look?.top ?? '#5a6690' }))
+    herMap.visible = hisMap.visible = false; scene.add(herMap, hisMap)
     let him = null
+    let avatarShadowTier = ''
+    const syncAvatarShadows = root => root.traverse(o => {
+      if (!o.isMesh) return
+      if (o.userData.townShadow === undefined) o.userData.townShadow = o.castShadow
+      o.castShadow = o.userData.townShadow && quality.tier.name !== 'low'
+    })
     s.spawnPartner = (px, py) => {
       him = makeChibi(partner.look)
       scene.add(him.group)
+      syncAvatarShadows(him.group)
       s.partner = { x: px, y: py, face: Math.PI, moving: 0 }
-      s.trail = [{ x: px, y: py }, { x: s.p.x, y: s.p.y }]
+      s.trail[0].x = px; s.trail[0].y = py
+      s.trail[1].x = s.p.x; s.trail[1].y = s.p.y
+      s.trailHead = 1; s.trailCount = 2
     }
 
     // walking route drawn on the ground + a target ring
@@ -277,7 +327,7 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
     cv.addEventListener('wheel', onWheel, { passive: false })
     const ro = new ResizeObserver(() => {
       const w = el.clientWidth, h = el.clientHeight
-      renderer.setSize(w, h); composer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix()
+      renderer.setSize(w, h); composer.setSize(w, h); bloom.setSize(Math.ceil(w * renderer.getPixelRatio() / 2), Math.ceil(h * renderer.getPixelRatio() / 2)); camera.aspect = w / h; camera.updateProjectionMatrix()
     })
     ro.observe(el)
 
@@ -289,8 +339,15 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
     const sunDir = new THREE.Vector3()
     const moonDir = new THREE.Vector3()
     let lastPool = 0
+    const here = new THREE.Vector3(), cameraTarget = new THREE.Vector3(), showTarget = new THREE.Vector3()
+    const warmSun = C('#ffb27a'), nearest = W3.lightSpots.slice()
+    const sortLights = (A, B) => A.distanceToSquared(here) - B.distanceToSquared(here)
     const update = (dt, t) => {
       const p = s.p
+      if (avatarShadowTier !== quality.tier.name) {
+        syncAvatarShadows(her.group); if (him) syncAvatarShadows(him.group)
+        avatarShadowTier = quality.tier.name
+      }
       s.clock = (s.clock + dt / CYCLE) % 1
       const a = (s.clock - 0.25) * Math.PI * 2
       sunDir.set(Math.cos(a), Math.sin(a), -0.45).normalize()
@@ -337,11 +394,15 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
       // he follows her footsteps
       const q = s.partner
       if (q && him) {
-        const last = s.trail[s.trail.length - 1]
-        if (!last || Math.hypot(p.x - last.x, p.y - last.y) > 3) { s.trail.push({ x: p.x, y: p.y }); if (s.trail.length > 400) s.trail.shift() }
+        const last = s.trail[s.trailHead]
+        if (!s.trailCount || Math.hypot(p.x - last.x, p.y - last.y) > 3) {
+          s.trailHead = (s.trailHead + 1) % 400
+          const next = s.trail[s.trailHead]; next.x = p.x; next.y = p.y
+          s.trailCount = Math.min(400, s.trailCount + 1)
+        }
         let rest = 30, tx = p.x, ty = p.y
-        for (let i = s.trail.length - 1; i > 0; i--) {
-          const A = s.trail[i], B = s.trail[i - 1], d = Math.hypot(A.x - B.x, A.y - B.y)
+        for (let i = 0; i < s.trailCount - 1; i++) {
+          const A = s.trail[(s.trailHead - i + 400) % 400], B = s.trail[(s.trailHead - i - 1 + 400) % 400], d = Math.hypot(A.x - B.x, A.y - B.y)
           if (rest <= d) { const k = rest / d; tx = A.x + (B.x - A.x) * k; ty = A.y + (B.y - A.y) * k; rest = 0; break }
           rest -= d; tx = B.x; ty = B.y
         }
@@ -381,10 +442,10 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
       const day = 1 - s.night
       W3.sky.material.uniforms.sunPosition.value.copy(sunDir)
       const lightDir = elev > -0.05 ? sunDir : moonDir.set(-sunDir.x, -sunDir.y, sunDir.z).normalize()
-      const center = s.cam.target
+      const center = her.group.position
       W3.sun.position.copy(center).addScaledVector(lightDir, 90)
       W3.sun.target.position.copy(center)
-      W3.sun.color.set(elev > -0.05 ? '#fff1dc' : '#a9b8ff').lerp(C('#ffb27a'), s.dusk * day)
+      W3.sun.color.set(elev > -0.05 ? '#fff1dc' : '#a9b8ff').lerp(warmSun, s.dusk * day)
       W3.sun.intensity = elev > -0.05 ? 2.3 * clamp(elev * 4, 0.15, 1) : 0.45
       mix3(SKY.hemiSky, s.dusk, s.night, W3.hemi.color)
       mix3(SKY.hemiGround, s.dusk, s.night, W3.hemi.groundColor)
@@ -398,8 +459,8 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
       glowMats.bulb.emissiveIntensity = 0.4 + s.night * 2.2
       if (t - lastPool > 0.3) {
         lastPool = t
-        const here = new THREE.Vector3(X(p.x), 0, Z(p.y))
-        const nearest = [...W3.lightSpots].sort((A, B) => A.distanceToSquared(here) - B.distanceToSquared(here))
+        here.set(X(p.x), 0, Z(p.y))
+        nearest.sort(sortLights)
         W3.pool.forEach((l, i) => { if (nearest[i]) l.position.copy(nearest[i]) })
       }
       W3.pool.forEach((l) => { l.intensity = s.night * 9 })
@@ -410,7 +471,7 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
         L.sprite.material.opacity = s.map ? 1 : clamp(1 - (d - 26) / 12, 0, 1)
         L.sprite.visible = L.sprite.material.opacity > 0.02
       }
-      W3.update(t, dt, her.group.position, s.night, s.dusk)
+      W3.update(t, dt, her.group.position, s.night, s.dusk, s.map)
       if (party) party.update(t, dt, her.group.position)
 
       // camera: smooth orbit around her, or a bird's-eye view of the whole town
@@ -422,13 +483,13 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
         const e = t - s.show.t0
         // after the candles go out, lift the view so the fireworks fill the sky
         const after = e > SHOW.blow
-        cam.target.lerp(after ? party.cakeTop.clone().setY(party.cakeTop.y + 3.5) : party.cakeTop, Math.min(1, dt * 1.5))
+        cam.target.lerp(after ? showTarget.copy(party.cakeTop).setY(party.cakeTop.y + 3.5) : party.cakeTop, Math.min(1, dt * 1.5))
         // swing slowly across the front of the party (never behind the banner)
         cam.yaw = 0.75 + Math.sin(e * 0.22 - 0.6) * 0.75
         cam.pitch = lerp(cam.pitch, after ? 0.14 : 0.3, Math.min(1, dt * 1.2))
         cam.dist = lerp(cam.dist, after ? 15 : 7.5, Math.min(1, dt * 1.2))
       } else {
-      const tgt = s.map ? new THREE.Vector3(0, 0, 4) : new THREE.Vector3(X(p.x), 1.1 + p.yy, Z(p.y))
+      const tgt = s.map ? cameraTarget.set(0, 0, 4) : cameraTarget.set(X(p.x), 1.1 + p.yy, Z(p.y))
       cam.target.lerp(tgt, Math.min(1, dt * (s.map ? 3 : 6)))
       cam.yaw += angleTo(cam.yaw, s.map ? 0 : cam.tYaw) * Math.min(1, dt * (intro ? 0.9 : 6))
       cam.pitch = lerp(cam.pitch, s.map ? 1.25 : cam.tPitch, Math.min(1, dt * rate))
@@ -440,6 +501,17 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
         cam.target.z + Math.cos(cam.yaw) * Math.cos(cam.pitch) * cam.dist,
       )
       camera.lookAt(cam.target)
+      W3.vegetation.update(camera, her.group.position, quality.tier, s.map)
+      const distantAvatar = s.map && cam.dist > 80
+      her.group.visible = !distantAvatar; herMap.visible = distantAvatar
+      herMap.position.copy(her.group.position); herMap.position.y += .65
+      if (him) {
+        him.group.visible = !distantAvatar; hisMap.visible = distantAvatar
+        hisMap.position.copy(him.group.position); hisMap.position.y += .65
+      }
+      herBlob.position.copy(her.group.position); herBlob.position.y += .025
+      hisBlob.visible = !!him
+      if (him) { hisBlob.position.copy(him.group.position); hisBlob.position.y += .025 }
       bloom.strength = 0.22 + s.night * 0.42
 
       // mini-map
@@ -472,19 +544,45 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
     setReady(true)
     if (party) s.toastT0 = setTimeout(() => flash(`🎂 Happy Birthday, ${story.name}! Everyone is waiting for you in the park`, 6500), 4800)
     let raf, last = performance.now(), alive = true
+    renderer.info.autoReset = false
     const frame = (now) => {
-      if (!alive) return
-      const dt = Math.min(0.05, (now - last) / 1000)
+      if (!alive || document.hidden) return
+      const elapsed = now - last, dt = Math.min(0.05, elapsed / 1000)
       last = now
       update(dt, now / 1000)
+      renderer.info.reset()
       composer.render()
+      const info = renderer.info.render
+      if (quality.sample(elapsed, info.calls, info.triangles) && fpsEl) {
+        fpsEl.textContent = `${quality.stats.fps.toFixed(1)} fps | ${quality.stats.ms.toFixed(1)} ms\n${info.calls} calls | ${Math.round(info.triangles / 1000)}k triangles\n${quality.stats.tier} | DPR ${renderer.getPixelRatio().toFixed(2)}`
+        fpsEl.dataset.fps = quality.stats.fps.toFixed(1)
+        fpsEl.dataset.calls = info.calls
+        fpsEl.dataset.triangles = info.triangles
+        fpsEl.dataset.tier = quality.stats.tier
+      }
       raf = requestAnimationFrame(frame)
     }
+    const visibility = () => {
+      cancelAnimationFrame(raf)
+      s.keys.clear(); s.run = false
+      if (!document.hidden && alive) { last = performance.now(); quality.reset(); raf = requestAnimationFrame(frame) }
+    }
+    document.addEventListener('visibilitychange', visibility)
     raf = requestAnimationFrame(frame)
 
     return () => {
       alive = false
       cancelAnimationFrame(raf)
+      document.removeEventListener('visibilitychange', visibility)
+      fpsEl?.remove()
+      cv.removeEventListener('pointerdown', pDown)
+      cv.removeEventListener('pointermove', pMove)
+      cv.removeEventListener('pointerup', pUp)
+      cv.removeEventListener('pointercancel', pUp)
+      cv.removeEventListener('wheel', onWheel)
+      her.dispose(); him?.dispose()
+      W3.dispose()
+      W3.sun.shadow.dispose()
       ro.disconnect()
       clearTimeout(s.toastT)
       clearTimeout(s.toastT0)
@@ -492,12 +590,15 @@ export default function Town3D({ look, name, story, world: layout, onEditAvatar 
       window.removeEventListener('keydown', onDown)
       window.removeEventListener('keyup', onUp)
       scene.traverse((o) => {
+        if (o.isInstancedMesh) o.dispose()
         if (o.geometry) o.geometry.dispose()
         const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []
         ms.forEach((mm) => { Object.values(mm).forEach((v) => v?.isTexture && v.dispose()); if (mm !== glowMats.window && mm !== glowMats.bulb) mm.dispose() })
       })
+      bloom.dispose()
+      output.dispose()
       composer.dispose()
-      envTex.dispose()
+      envTarget.dispose()
       renderer.dispose()
       el.removeChild(renderer.domElement)
     }
